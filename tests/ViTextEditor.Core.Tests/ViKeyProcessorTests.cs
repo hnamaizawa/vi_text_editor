@@ -1,4 +1,5 @@
 using ViTextEditor.Core.Editor;
+using Xunit;
 
 namespace ViTextEditor.Core.Tests;
 
