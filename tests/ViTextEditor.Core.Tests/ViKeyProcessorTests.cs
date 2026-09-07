@@ -59,12 +59,12 @@ public sealed class ViKeyProcessorTests
     }
 
     [Fact]
-    public void XDeletesCharacterAndPCanRestoreIt()
+    public void XDeletesCharacterAndUppercasePCanRestoreItBeforeCaret()
     {
         var (editor, vi) = Create("abc", 1);
         vi.Handle("x");
         Assert.Equal("ac", editor.Text);
-        vi.Handle("p");
+        vi.Handle("P");
         Assert.Equal("abc", editor.Text);
     }
 
@@ -75,7 +75,7 @@ public sealed class ViKeyProcessorTests
         vi.Handle("j");
         Assert.Equal(6, editor.CaretPosition);
         vi.Handle("j");
-        Assert.Equal(10, editor.CaretPosition);
+        Assert.Equal(9, editor.CaretPosition);
         vi.Handle("k");
         Assert.Equal(6, editor.CaretPosition);
     }
