@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   core-tests:
@@ -29,3 +30,17 @@ jobs:
         run: dotnet restore src/ViTextEditor/ViTextEditor.csproj
       - name: Build application
         run: dotnet build src/ViTextEditor/ViTextEditor.csproj --configuration Release --no-restore
+      - name: Publish portable Windows x64 build
+        run: dotnet publish src/ViTextEditor/ViTextEditor.csproj --configuration Release --runtime win-x64 --self-contained true --output artifacts/vi_text_editor-win-x64
+      - name: Verify portable executable
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "artifacts/vi_text_editor-win-x64/vi_text_editor.exe")) {
+            throw "Portable executable was not created."
+          }
+      - name: Upload portable Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: vi_text_editor-win-x64
+          path: artifacts/vi_text_editor-win-x64/
+          if-no-files-found: error
