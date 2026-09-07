@@ -1,6 +1,6 @@
 project:
   name: vi_text_editor
-  version: 0.1.1
+  version: 0.1.2
   platform: windows
   ui: winforms
   editor_component: Scintilla5.NET
@@ -18,6 +18,7 @@ development_model:
 non_negotiable_invariants:
   - normal_mode_must_not_insert_printable_text
   - insert_mode_must_allow_normal_ime_input
+  - ime_composition_must_track_editor_caret
   - escape_must_return_to_normal_mode
   - vi_commands_must_not_corrupt_document_text
   - file_save_must_preserve_selected_encoding
