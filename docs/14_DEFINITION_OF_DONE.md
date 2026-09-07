@@ -6,6 +6,8 @@
 2. vi状態機械の変更にはCore単体テストを追加または更新する。
 3. `dotnet test tests/ViTextEditor.Core.Tests/ViTextEditor.Core.Tests.csproj --configuration Release` が成功する。
 4. `dotnet build src/ViTextEditor/ViTextEditor.csproj --configuration Release` が成功する。
-5. unrelated changes を入れない。
-6. ユーザー向け操作が変わった場合はREADMEを更新する。
-7. GitHub Pull Requestとして提示し、人の確認後にのみマージする。
+5. Windows x64 自己完結版の `dotnet publish` が成功し、`vi_text_editor.exe` が生成される。
+6. 配布版は利用者PCへの .NET ランタイム／SDKの事前インストールを要求しない。
+7. unrelated changes を入れない。
+8. ユーザー向け操作が変わった場合はREADMEを更新する。
+9. GitHub Pull Requestとして提示し、人の確認後にのみマージする。
