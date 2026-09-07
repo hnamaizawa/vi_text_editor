@@ -1,0 +1,31 @@
+project:
+  name: vi_text_editor
+  version: 0.1.0
+  platform: windows
+  ui: winforms
+  editor_component: Scintilla5.NET
+  runtime: .NET 10
+
+development_model:
+  - human_describes_requirements_in_natural_language
+  - ai_changes_only_necessary_files
+  - ai_runs_regression_tests_and_build_checks
+  - ai_opens_pull_request
+  - human_reviews_pull_request
+  - ai_merges_only_after_human_requests_merge
+
+non_negotiable_invariants:
+  - normal_mode_must_not_insert_printable_text
+  - insert_mode_must_allow_normal_ime_input
+  - escape_must_return_to_normal_mode
+  - vi_commands_must_not_corrupt_document_text
+  - file_save_must_preserve_selected_encoding
+  - file_save_must_not_silently_change_line_endings
+  - unsaved_changes_must_prompt_before_close
+  - unrelated_features_must_not_be_changed
+  - core_vi_behavior_must_remain_gui_independent_and_unit_testable
+  - pull_requests_must_pass_core_tests_and_windows_build
+
+required_checks:
+  - dotnet test tests/ViTextEditor.Core.Tests/ViTextEditor.Core.Tests.csproj --configuration Release
+  - dotnet build src/ViTextEditor/ViTextEditor.csproj --configuration Release

@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  core-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore core tests
+        run: dotnet restore tests/ViTextEditor.Core.Tests/ViTextEditor.Core.Tests.csproj
+      - name: Run core tests
+        run: dotnet test tests/ViTextEditor.Core.Tests/ViTextEditor.Core.Tests.csproj --configuration Release --no-restore
+
+  windows-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore application
+        run: dotnet restore src/ViTextEditor/ViTextEditor.csproj
+      - name: Build application
+        run: dotnet build src/ViTextEditor/ViTextEditor.csproj --configuration Release --no-restore
