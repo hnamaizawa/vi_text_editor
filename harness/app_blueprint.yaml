@@ -1,6 +1,6 @@
 project:
   name: vi_text_editor
-  version: 0.1.2
+  version: 0.1.3
   platform: windows
   ui: winforms
   editor_component: Scintilla5.NET
@@ -21,6 +21,9 @@ non_negotiable_invariants:
   - ime_composition_must_track_editor_caret
   - escape_must_return_to_normal_mode
   - vi_commands_must_not_corrupt_document_text
+  - reference_mode_must_be_enabled_by_default
+  - reference_mode_must_block_document_modification
+  - undo_must_not_go_before_initial_loaded_document_state
   - file_save_must_preserve_selected_encoding
   - file_save_must_not_silently_change_line_endings
   - unsaved_changes_must_prompt_before_close

@@ -14,17 +14,29 @@ Windows向けの軽量テキストエディターです。EmEditor／サクラ�
 6. 問題なければ人がAIへマージを依頼する
 7. AIがPull Requestをマージする
 
-## v0.1.1 の構成
+## v0.1.3 の構成
 
 - .NET 10 + Windows Forms
 - Scintilla5.NET 7.0.0
 - viキーバインドの状態機械を `ViTextEditor.Core` に分離
-- CoreはGUI非依存のため自動テスト可能
 - UTF-8 / UTF-8 BOM / UTF-16 / Shift_JISの読み込み・保存
 - CRLF / LF / CRの改行コードを保存時に維持
-- 未保存変更の終了確認
 - Windows x64 自己完結版（self-contained）をGitHub Actionsで生成
 - 配布版の利用時は .NET SDK / .NET Runtime の事前インストール不要
+- 参照モードを搭載し、既定でON
+- ファイル読込時点をUndoの下限として固定
+
+## 参照モード
+
+起動時およびファイルを開いた直後は、誤編集防止のため参照モードがONです。
+
+- `モード` → `参照モード` のチェックを外すと編集可能になります。
+- 参照モード中は通常入力、viの編集系コマンド、Undo/Redoによる文書変更を抑止します。
+- ステータスバーに `参照` / `編集` を表示します。
+
+## Undoの安全動作
+
+ファイルを開いた直後にScintillaのUndo履歴をリセットします。このため `Ctrl+Z` や vi の `u` を繰り返しても、Undoは「最初にファイルを開いた状態」で停止し、読込前の空文書まで戻ることはありません。
 
 ## 現在利用できるvi操作
 
@@ -45,11 +57,7 @@ Windows向けの軽量テキストエディターです。EmEditor／サクラ�
 | `u` | Undo |
 | `Ctrl+R` | Redo |
 
-Visualモード、`:` コマンド、`/` 検索、数値プレフィックスなどは今後追加します。
-
 ## Windowsで通常利用する方法（.NETのインストール不要）
-
-通常利用者は .NET 10 SDK をインストールする必要はありません。
 
 1. GitHub の `Actions` を開く
 2. 最新の成功した `CI` 実行を開く
@@ -57,11 +65,7 @@ Visualモード、`:` コマンド、`/` 検索、数値プレフィックスな
 4. ZIPを任意のフォルダーへ展開する
 5. 展開したフォルダー内の `vi_text_editor.exe` をダブルクリックする
 
-自己完結版には実行に必要な .NET ランタイムが同梱されます。
-
 ## ソースコードから開発・起動する方法
-
-こちらは開発者向けです。前提として .NET 10 SDK が必要です。
 
 ```bat
 git clone https://github.com/hnamaizawa/vi_text_editor.git
@@ -77,43 +81,11 @@ git pull
 run_windows.cmd
 ```
 
-`run_windows.cmd` は `dist\vi_text_editor-win-x64\vi_text_editor.exe` が存在する場合は配布版を優先して起動し、存在しない場合のみ .NET SDK を使った開発モードで起動します。
-
-直接開発モードで起動する場合:
-
-```bat
-dotnet restore src\ViTextEditor\ViTextEditor.csproj
-dotnet run --project src\ViTextEditor\ViTextEditor.csproj
-```
-
-## 自己完結版をローカルで作成する方法
-
-.NET 10 SDK がインストールされた開発PCでは次を実行できます。
-
-```bat
-publish_windows_portable.cmd
-```
-
-生成先:
-
-```text
-dist\vi_text_editor-win-x64\vi_text_editor.exe
-```
-
-この `dist\vi_text_editor-win-x64` フォルダー一式を別のWindows x64 PCへコピーすれば、そのPCに .NET がインストールされていなくても実行できます。
-
 ## 回帰テスト
 
 ```bat
 check_harness.cmd
 ```
-
-ハーネスでは次を確認します。
-
-- Core単体テスト
-- WindowsアプリのReleaseビルド
-- Windows x64自己完結版のpublish
-- `vi_text_editor.exe` が生成されること
 
 Core単体テストのみの場合:
 
