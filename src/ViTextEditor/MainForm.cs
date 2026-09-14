@@ -14,6 +14,7 @@ public sealed class MainForm : Form
     private readonly ToolStripStatusLabel _eolLabel = new();
     private readonly ToolStripStatusLabel _positionLabel = new();
     private readonly ViKeyProcessor _vi;
+    private readonly ViNavigationProcessor _navigation;
     private ToolStripMenuItem? _referenceModeMenuItem;
     private ToolStripMenuItem? _undoMenuItem;
     private ToolStripMenuItem? _redoMenuItem;
@@ -36,7 +37,7 @@ public sealed class MainForm : Form
         var status = BuildStatusBar();
 
         _editor.Dock = DockStyle.Fill;
-        _editor.Font = new Font("Consolas", 11f);
+        ConfigureEditorAppearance();
         _editor.Margins[0].Type = MarginType.Number;
         _editor.Margins[0].Width = 48;
         _editor.KeyDown += EditorOnKeyDown;
@@ -51,13 +52,56 @@ public sealed class MainForm : Form
 
         var adapter = new ScintillaEditorAdapter(_editor);
         _vi = new ViKeyProcessor(adapter);
-        _vi.ModeChanged += (_, _) => UpdateStatus();
+        _navigation = new ViNavigationProcessor(adapter);
+        _vi.ModeChanged += (_, _) =>
+        {
+            ApplyCaretStyleForMode();
+            UpdateStatus();
+        };
 
         FormClosing += OnFormClosing;
+        ApplyCaretStyleForMode();
         ApplyReferenceMode();
         ResetUndoBaseline();
         UpdateTitle();
         UpdateStatus();
+    }
+
+    private void ConfigureEditorAppearance()
+    {
+        var fontName = SelectMonospacedJapaneseFont();
+        _editor.Styles[Style.Default].Font = fontName;
+        _editor.Styles[Style.Default].SizeF = 11f;
+        _editor.StyleClearAll();
+        _editor.CaretWidth = 3;
+    }
+
+    private static string SelectMonospacedJapaneseFont()
+    {
+        var installed = FontFamily.Families
+            .Select(font => font.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var candidate in new[] { "BIZ UDGothic", "BIZ UDゴシック", "MS Gothic", "ＭＳ ゴシック" })
+        {
+            if (installed.Contains(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return "Consolas";
+    }
+
+    private void ApplyCaretStyleForMode()
+    {
+        if (_vi is null)
+        {
+            return;
+        }
+
+        _editor.CaretStyle = _vi.Mode == EditorMode.Normal ? CaretStyle.Block : CaretStyle.Line;
+        _editor.CaretWidth = 3;
     }
 
     private MenuStrip BuildMenu()
@@ -89,7 +133,7 @@ public sealed class MainForm : Form
 
         var help = new ToolStripMenuItem("ヘルプ(&H)");
         help.DropDownItems.Add(new ToolStripMenuItem("viキーバインド", null, (_, _) => ShowKeyBindings()));
-        help.DropDownItems.Add(new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show(this, "vi_text_editor v0.1.3", "バージョン情報", MessageBoxButtons.OK, MessageBoxIcon.Information)));
+        help.DropDownItems.Add(new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show(this, "vi_text_editor v0.1.4", "バージョン情報", MessageBoxButtons.OK, MessageBoxIcon.Information)));
 
         menu.Items.AddRange([file, edit, mode, help]);
         return menu;
@@ -144,6 +188,14 @@ public sealed class MainForm : Form
             return;
         }
 
+        if (_vi.Mode == EditorMode.Normal && _navigation.Handle(token))
+        {
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+            UpdateStatus();
+            return;
+        }
+
         if (_vi.Handle(token))
         {
             e.Handled = true;
@@ -158,12 +210,14 @@ public sealed class MainForm : Form
     {
         if (e.KeyCode == Keys.Escape) return "Esc";
         if (e.Control && e.KeyCode == Keys.R) return "Ctrl+r";
+        if (e.Control && e.KeyCode == Keys.F) return "Ctrl+f";
+        if (e.Control && e.KeyCode == Keys.B) return "Ctrl+b";
         if (e.Control || e.Alt) return null;
         if (e.Shift)
         {
             return e.KeyCode switch
             {
-                Keys.G => "G", Keys.O => "O", Keys.P => "P", Keys.D6 => "^", Keys.D4 => "$", _ => null
+                Keys.G => "G", Keys.O => "O", Keys.P => "P", Keys.W => "W", Keys.B => "B", Keys.D6 => "^", Keys.D4 => "$", _ => null
             };
         }
         return e.KeyCode switch
@@ -306,7 +360,7 @@ public sealed class MainForm : Form
     {
         MessageBox.Show(this,
             "参照モードは既定でONです。モード > 参照モード で編集可能に切り替えられます。\n\n" +
-            "NORMAL: h j k l / w b e / 0 ^ $ / gg G / x / dd / yy / p P / u / Ctrl+R\n" +
+            "NORMAL: h j k l / w b（word）/ W B（WORD）/ Ctrl+F Ctrl+B（ページ移動） / e / 0 ^ $ / gg G / x / dd / yy / p P / u / Ctrl+R\n" +
             "INSERT: i / a / o / O、EscでNORMALへ戻る",
             "viキーバインド", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
