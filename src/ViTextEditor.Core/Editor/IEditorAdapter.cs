@@ -9,4 +9,8 @@ public interface IEditorAdapter
     void InsertText(int position, string text);
     void Undo();
     void Redo();
+
+    void ScrollPage(int direction)
+    {
+    }
 }
