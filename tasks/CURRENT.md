@@ -1,34 +1,26 @@
-# CURRENT - v0.1.1
+# CURRENT - v0.1.4
 
 ## 目的
 
-EmEditor／サクラエディタに近いWindows GUIを持ち、編集キーバインドだけをvi方式にしたテキストエディターを、通常利用者のPCへ .NET を事前インストールせずに利用できる形へする。
+EmEditor／サクラエディタに近いWindows GUIを維持しつつ、カーソル視認性、日本語等幅表示、viナビゲーションを改善する。
 
-## v0.1.1 スコープ
+## v0.1.4 スコープ
 
-- [x] Windows x64 self-contained publish を追加
-- [x] GitHub Actions で `vi_text_editor-win-x64` artifact を生成
-- [x] `run_windows.cmd` は配布版EXEを優先して起動
-- [x] `publish_windows_portable.cmd` を追加
-- [x] ハーネスで self-contained publish と `vi_text_editor.exe` 生成を検証
-- [x] README に .NET 不要の通常利用手順を追加
-- [x] portable build output を `.gitignore` に追加
-
-## 維持する v0.1.0 機能
-
-- [x] .NET 10 + WinFormsの開発構成
-- [x] Scintilla5.NET
-- [x] NORMAL / INSERT
-- [x] `h j k l`, `w b e`, `0 ^ $`, `gg G`
-- [x] `x dd yy p P`, `u Ctrl+R`, `i a o O`
-- [x] UTF-8 / UTF-16 / Shift_JIS読み込み・保存
-- [x] 未保存変更確認
-- [x] Core自動テスト
+- [x] NORMALモードのカーソルをブロック表示にする
+- [x] INSERTモードのカーソルを3px幅の縦線にする
+- [x] 日本語等幅フォントとして `BIZ UDGothic` を優先する
+- [x] `BIZ UDGothic` が無い場合は `MS Gothic`、次に `Consolas` へフォールバック
+- [x] `w` / `b` をVimのword境界に近づける
+- [x] `W` / `B` を空白区切りのWORD移動として追加
+- [x] `Ctrl+F` / `Ctrl+B` でほぼ1画面分の下／上スクロールを追加
+- [x] word / WORD / ページ移動のCore単体テストを追加
+- [x] 参照モード、Undo下限保護、ファイルI/Oを維持
 
 ## 次候補
 
-1. 検索 (`/`, `n`, `N`) とWindows検索ダイアログ
-2. タブ編集
-3. Visualモード
-4. 数値プレフィックス
-5. operator + motion
+1. `e` / `E`, `ge` / `gE` のword/WORD末尾移動
+2. 検索 (`/`, `?`, `n`, `N`) とWindows検索ダイアログ
+3. 数値プレフィックス (`3w`, `5j`, `2Ctrl+F` など)
+4. operator + motion (`dw`, `dW`, `cw`, `c$` など)
+5. Visualモード
+6. タブ編集

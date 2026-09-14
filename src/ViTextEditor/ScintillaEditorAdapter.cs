@@ -33,4 +33,17 @@ internal sealed class ScintillaEditorAdapter : IEditorAdapter
 
     public void Undo() => _editor.Undo();
     public void Redo() => _editor.Redo();
+
+    public void ScrollPage(int direction)
+    {
+        if (direction == 0)
+        {
+            return;
+        }
+
+        var pageLines = Math.Max(1, _editor.LinesOnScreen - 2);
+        var target = _editor.FirstVisibleLine + (Math.Sign(direction) * pageLines);
+        var maxFirstVisibleLine = Math.Max(0, _editor.Lines.Count - 1);
+        _editor.FirstVisibleLine = Math.Clamp(target, 0, maxFirstVisibleLine);
+    }
 }
