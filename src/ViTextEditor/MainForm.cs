@@ -89,7 +89,7 @@ public sealed class MainForm : Form
     {
         _commandLine.Dock = DockStyle.Bottom;
         _commandLine.Visible = false;
-        _commandLine.BorderStyle = BorderStyle.FixedSingle;
+        _commandLine.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
         _commandLine.Font = new Font(SelectMonospacedJapaneseFont(), 10.5f);
         _commandLine.KeyDown += CommandLineOnKeyDown;
     }
