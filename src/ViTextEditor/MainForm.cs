@@ -8,6 +8,7 @@ namespace ViTextEditor;
 public sealed class MainForm : Form
 {
     private readonly Scintilla _editor = new();
+    private readonly TextBox _commandLine = new();
     private readonly ToolStripStatusLabel _modeLabel = new();
     private readonly ToolStripStatusLabel _accessLabel = new();
     private readonly ToolStripStatusLabel _encodingLabel = new();
@@ -15,6 +16,8 @@ public sealed class MainForm : Form
     private readonly ToolStripStatusLabel _positionLabel = new();
     private readonly ViKeyProcessor _vi;
     private readonly ViNavigationProcessor _navigation;
+    private readonly ViSearchProcessor _search;
+    private readonly ViCommandProcessor _commands;
     private ToolStripMenuItem? _referenceModeMenuItem;
     private ToolStripMenuItem? _undoMenuItem;
     private ToolStripMenuItem? _redoMenuItem;
@@ -25,6 +28,7 @@ public sealed class MainForm : Form
     private bool _dirty;
     private bool _loading;
     private bool _referenceMode = true;
+    private char _commandPrefix;
 
     public MainForm()
     {
@@ -45,7 +49,10 @@ public sealed class MainForm : Form
         _editor.MouseUp += (_, _) => UpdateStatus();
         _editor.TextChanged += EditorOnTextChanged;
 
+        ConfigureCommandLine();
+
         Controls.Add(_editor);
+        Controls.Add(_commandLine);
         Controls.Add(status);
         Controls.Add(menu);
         MainMenuStrip = menu;
@@ -53,6 +60,8 @@ public sealed class MainForm : Form
         var adapter = new ScintillaEditorAdapter(_editor);
         _vi = new ViKeyProcessor(adapter);
         _navigation = new ViNavigationProcessor(adapter);
+        _search = new ViSearchProcessor(adapter);
+        _commands = new ViCommandProcessor(adapter);
         _vi.ModeChanged += (_, _) =>
         {
             ApplyCaretStyleForMode();
@@ -74,6 +83,15 @@ public sealed class MainForm : Form
         _editor.Styles[Style.Default].SizeF = 11f;
         _editor.StyleClearAll();
         _editor.CaretWidth = 3;
+    }
+
+    private void ConfigureCommandLine()
+    {
+        _commandLine.Dock = DockStyle.Bottom;
+        _commandLine.Visible = false;
+        _commandLine.BorderStyle = BorderStyle.FixedSingle;
+        _commandLine.Font = new Font(SelectMonospacedJapaneseFont(), 10.5f);
+        _commandLine.KeyDown += CommandLineOnKeyDown;
     }
 
     private static string SelectMonospacedJapaneseFont()
@@ -133,7 +151,7 @@ public sealed class MainForm : Form
 
         var help = new ToolStripMenuItem("ヘルプ(&H)");
         help.DropDownItems.Add(new ToolStripMenuItem("viキーバインド", null, (_, _) => ShowKeyBindings()));
-        help.DropDownItems.Add(new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show(this, "vi_text_editor v0.1.4", "バージョン情報", MessageBoxButtons.OK, MessageBoxIcon.Information)));
+        help.DropDownItems.Add(new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show(this, "vi_text_editor v0.1.5", "バージョン情報", MessageBoxButtons.OK, MessageBoxIcon.Information)));
 
         menu.Items.AddRange([file, edit, mode, help]);
         return menu;
@@ -188,6 +206,24 @@ public sealed class MainForm : Form
             return;
         }
 
+        if (_vi.Mode == EditorMode.Normal && token is ":" or "/" or "?")
+        {
+            BeginCommandInput(token[0]);
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+            return;
+        }
+
+        if (_vi.Mode == EditorMode.Normal && token is "n" or "N")
+        {
+            _search.Repeat(reverseDirection: token == "N");
+            _editor.ScrollCaret();
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+            UpdateStatus();
+            return;
+        }
+
         if (_vi.Mode == EditorMode.Normal && _navigation.Handle(token))
         {
             e.Handled = true;
@@ -212,20 +248,83 @@ public sealed class MainForm : Form
         if (e.Control && e.KeyCode == Keys.R) return "Ctrl+r";
         if (e.Control && e.KeyCode == Keys.F) return "Ctrl+f";
         if (e.Control && e.KeyCode == Keys.B) return "Ctrl+b";
+        if (e.Control && e.KeyCode == Keys.D) return "Ctrl+d";
+        if (e.Control && e.KeyCode == Keys.U) return "Ctrl+u";
         if (e.Control || e.Alt) return null;
+        if (e.Shift && e.KeyCode == Keys.OemSemicolon) return ":";
+        if (e.Shift && e.KeyCode == Keys.OemQuestion) return "?";
         if (e.Shift)
         {
             return e.KeyCode switch
             {
-                Keys.G => "G", Keys.O => "O", Keys.P => "P", Keys.W => "W", Keys.B => "B", Keys.D6 => "^", Keys.D4 => "$", _ => null
+                Keys.G => "G", Keys.O => "O", Keys.P => "P", Keys.W => "W", Keys.B => "B", Keys.N => "N", Keys.D6 => "^", Keys.D4 => "$", _ => null
             };
         }
+        if (e.KeyCode == Keys.OemQuestion) return "/";
         return e.KeyCode switch
         {
             Keys.I => "i", Keys.A => "a", Keys.O => "o", Keys.H => "h", Keys.J => "j", Keys.K => "k", Keys.L => "l",
             Keys.W => "w", Keys.B => "b", Keys.E => "e", Keys.G => "g", Keys.D => "d", Keys.Y => "y", Keys.X => "x",
-            Keys.P => "p", Keys.U => "u", Keys.D0 => "0", _ => null
+            Keys.P => "p", Keys.U => "u", Keys.N => "n", Keys.D0 => "0", _ => null
         };
+    }
+
+    private void BeginCommandInput(char prefix)
+    {
+        _commandPrefix = prefix;
+        _commandLine.Text = prefix.ToString();
+        _commandLine.Visible = true;
+        _commandLine.BringToFront();
+        _commandLine.Focus();
+        _commandLine.SelectionStart = _commandLine.TextLength;
+    }
+
+    private void CommandLineOnKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.KeyCode == Keys.Escape)
+        {
+            EndCommandInput();
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+            return;
+        }
+
+        if (e.KeyCode == Keys.Back && _commandLine.SelectionStart <= 1 && _commandLine.SelectionLength == 0)
+        {
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+            return;
+        }
+
+        if (e.KeyCode != Keys.Enter)
+        {
+            return;
+        }
+
+        var value = _commandLine.Text.Length > 1 ? _commandLine.Text[1..] : string.Empty;
+        var moved = _commandPrefix switch
+        {
+            ':' => _commands.Execute(value),
+            '/' => _search.Search(value, forward: true),
+            '?' => _search.Search(value, forward: false),
+            _ => false
+        };
+
+        EndCommandInput();
+        if (moved)
+        {
+            _editor.ScrollCaret();
+        }
+        UpdateStatus();
+        e.Handled = true;
+        e.SuppressKeyPress = true;
+    }
+
+    private void EndCommandInput()
+    {
+        _commandLine.Visible = false;
+        _commandLine.Text = string.Empty;
+        _editor.Focus();
     }
 
     private void EditorOnTextChanged(object? sender, EventArgs e)
@@ -360,7 +459,10 @@ public sealed class MainForm : Form
     {
         MessageBox.Show(this,
             "参照モードは既定でONです。モード > 参照モード で編集可能に切り替えられます。\n\n" +
-            "NORMAL: h j k l / w b（word）/ W B（WORD）/ Ctrl+F Ctrl+B（ページ移動） / e / 0 ^ $ / gg G / x / dd / yy / p P / u / Ctrl+R\n" +
+            "NORMAL: h j k l / w b（word）/ W B（WORD）/ Ctrl+F Ctrl+B（1画面）/ Ctrl+D Ctrl+U（半画面）\n" +
+            "検索: /文字列 / ?文字列 / n（同方向）/ N（逆方向）\n" +
+            "ジャンプ: :行番号（例 :120）/ :$（最終行）\n" +
+            "その他: e / 0 ^ $ / gg G / x / dd / yy / p P / u / Ctrl+R\n" +
             "INSERT: i / a / o / O、EscでNORMALへ戻る",
             "viキーバインド", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
