@@ -41,9 +41,40 @@ internal sealed class ScintillaEditorAdapter : IEditorAdapter
             return;
         }
 
-        var pageLines = Math.Max(1, _editor.LinesOnScreen - 2);
-        var target = _editor.FirstVisibleLine + (Math.Sign(direction) * pageLines);
-        var maxFirstVisibleLine = Math.Max(0, _editor.Lines.Count - 1);
-        _editor.FirstVisibleLine = Math.Clamp(target, 0, maxFirstVisibleLine);
+        ScrollByVisibleLines(Math.Sign(direction) * Math.Max(1, _editor.LinesOnScreen - 2));
+    }
+
+    public void ScrollHalfPage(int direction)
+    {
+        if (direction == 0)
+        {
+            return;
+        }
+
+        ScrollByVisibleLines(Math.Sign(direction) * Math.Max(1, _editor.LinesOnScreen / 2));
+    }
+
+    private void ScrollByVisibleLines(int deltaLines)
+    {
+        if (_editor.Lines.Count == 0 || deltaLines == 0)
+        {
+            return;
+        }
+
+        var currentLine = Math.Clamp(_editor.CurrentLine, 0, _editor.Lines.Count - 1);
+        var currentLineStart = _editor.Lines[currentLine].Position;
+        var column = Math.Max(0, _editor.CurrentPosition - currentLineStart);
+        var targetLine = Math.Clamp(currentLine + deltaLines, 0, _editor.Lines.Count - 1);
+        var target = _editor.Lines[targetLine];
+        var maxTargetPosition = Math.Max(target.Position, target.EndPosition - 1);
+        var targetPosition = Math.Min(target.Position + column, maxTargetPosition);
+
+        var targetFirstVisibleLine = Math.Clamp(
+            _editor.FirstVisibleLine + deltaLines,
+            0,
+            Math.Max(0, _editor.Lines.Count - 1));
+
+        _editor.FirstVisibleLine = targetFirstVisibleLine;
+        _editor.GotoPosition(targetPosition);
     }
 }
