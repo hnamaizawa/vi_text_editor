@@ -13,4 +13,8 @@ public interface IEditorAdapter
     void ScrollPage(int direction)
     {
     }
+
+    void ScrollHalfPage(int direction)
+    {
+    }
 }
