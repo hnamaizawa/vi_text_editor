@@ -48,7 +48,7 @@ public sealed class MainForm : Form
         Text = "vi_text_editor";
         Width = 1100;
         Height = 760;
-        StartPosition = FormStartScreen;
+        StartPosition = FormStartPosition.CenterScreen;
 
         var menu = BuildMenu();
         var status = BuildStatusBar();
