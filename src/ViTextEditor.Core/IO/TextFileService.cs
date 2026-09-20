@@ -13,6 +13,12 @@ public static class TextFileService
 
     public static LoadedTextFile Load(string path)
     {
+        var length = new FileInfo(path).Length;
+        if (LargeFilePolicy.ShouldUseLargeFileMode(length))
+        {
+            throw new IOException($"{length:N0} bytes の大容量ファイルです。ファイルメニューの『開く』からLarge Fileモードで開いてください。");
+        }
+
         var bytes = File.ReadAllBytes(path);
         var (encoding, preambleLength) = DetectEncoding(bytes);
         var text = encoding.GetString(bytes, preambleLength, bytes.Length - preambleLength);
