@@ -50,6 +50,68 @@ public sealed class ViKeyProcessorTests
     }
 
     [Fact]
+    public void CwChangesCurrentWordAndEntersInsertMode()
+    {
+        var (editor, vi) = Create("alpha beta", 0);
+
+        vi.Handle("c");
+        Assert.True(vi.Handle("w"));
+
+        Assert.Equal(" beta", editor.Text);
+        Assert.Equal(0, editor.CaretPosition);
+        Assert.Equal(EditorMode.Insert, vi.Mode);
+    }
+
+    [Fact]
+    public void CwFromMiddleOfWordChangesFromCaretToWordEnd()
+    {
+        var (editor, vi) = Create("alpha beta", 2);
+
+        vi.Handle("c");
+        vi.Handle("w");
+
+        Assert.Equal("al beta", editor.Text);
+        Assert.Equal(2, editor.CaretPosition);
+        Assert.Equal(EditorMode.Insert, vi.Mode);
+    }
+
+    [Fact]
+    public void UppercaseCwChangesWhitespaceSeparatedWord()
+    {
+        var (editor, vi) = Create("foo-bar baz", 0);
+
+        vi.Handle("c");
+        vi.Handle("W");
+
+        Assert.Equal(" baz", editor.Text);
+        Assert.Equal(EditorMode.Insert, vi.Mode);
+    }
+
+    [Fact]
+    public void CeChangesCurrentWordAndEntersInsertMode()
+    {
+        var (editor, vi) = Create("alpha beta", 0);
+
+        vi.Handle("c");
+        vi.Handle("e");
+
+        Assert.Equal(" beta", editor.Text);
+        Assert.Equal(EditorMode.Insert, vi.Mode);
+    }
+
+    [Fact]
+    public void CDollarChangesToEndOfLine()
+    {
+        var (editor, vi) = Create("one two\nthree", 4);
+
+        vi.Handle("c");
+        vi.Handle("$");
+
+        Assert.Equal("one \nthree", editor.Text);
+        Assert.Equal(EditorMode.Insert, vi.Mode);
+    }
+
+    [Fact]
     public void DdDeletesCurrentLine()
     {
         var (editor, vi) = Create("one\ntwo\nthree", 5);

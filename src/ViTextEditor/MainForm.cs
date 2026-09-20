@@ -48,7 +48,9 @@ public sealed class MainForm : Form
         _editor.KeyPress += EditorOnKeyPress;
         _editor.UpdateUI += (_, _) => UpdateStatus();
         _editor.MouseUp += (_, _) => UpdateStatus();
-        _editor.TextChanged += EditorOnTextChanged;
+        _editor.TextChanged += (_, _) => UpdateStatus();
+        _editor.SavePointLeft += EditorOnSavePointLeft;
+        _editor.SavePointReached += EditorOnSavePointReached;
 
         ConfigureCommandLine();
 
@@ -152,7 +154,7 @@ public sealed class MainForm : Form
 
         var help = new ToolStripMenuItem("ヘルプ(&H)");
         help.DropDownItems.Add(new ToolStripMenuItem("viキーバインド", null, (_, _) => ShowKeyBindings()));
-        help.DropDownItems.Add(new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show(this, "vi_text_editor v0.1.6", "バージョン情報", MessageBoxButtons.OK, MessageBoxIcon.Information)));
+        help.DropDownItems.Add(new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show(this, "vi_text_editor v0.1.7", "バージョン情報", MessageBoxButtons.OK, MessageBoxIcon.Information)));
 
         menu.Items.AddRange([file, edit, mode, help]);
         return menu;
@@ -186,6 +188,7 @@ public sealed class MainForm : Form
     private void ResetUndoBaseline()
     {
         _editor.EmptyUndoBuffer();
+        SetDirty(false);
     }
 
     private void EditorOnKeyDown(object? sender, KeyEventArgs e)
@@ -224,7 +227,7 @@ public sealed class MainForm : Form
             return;
         }
 
-        if (_vi.Mode == EditorMode.Normal && _navigation.Handle(token))
+        if (_vi.Mode == EditorMode.Normal && !_vi.HasPendingCommand && _navigation.Handle(token))
         {
             e.Handled = true;
             e.SuppressKeyPress = true;
@@ -275,7 +278,7 @@ public sealed class MainForm : Form
         }
     }
 
-    private static bool IsMutatingViToken(string token) => token is "i" or "a" or "o" or "O" or "x" or "d" or "p" or "P" or "u" or "Ctrl+r";
+    private static bool IsMutatingViToken(string token) => token is "i" or "a" or "o" or "O" or "x" or "d" or "c" or "p" or "P" or "u" or "Ctrl+r";
 
     private static string? ToViToken(KeyEventArgs e)
     {
@@ -299,7 +302,7 @@ public sealed class MainForm : Form
         return e.KeyCode switch
         {
             Keys.I => "i", Keys.A => "a", Keys.O => "o", Keys.H => "h", Keys.J => "j", Keys.K => "k", Keys.L => "l",
-            Keys.W => "w", Keys.B => "b", Keys.E => "e", Keys.G => "g", Keys.D => "d", Keys.Y => "y", Keys.X => "x",
+            Keys.W => "w", Keys.B => "b", Keys.C => "c", Keys.E => "e", Keys.G => "g", Keys.D => "d", Keys.Y => "y", Keys.X => "x",
             Keys.P => "p", Keys.U => "u", Keys.N => "n", Keys.D0 => "0", _ => null
         };
     }
@@ -367,14 +370,31 @@ public sealed class MainForm : Form
         UpdateStatus();
     }
 
-    private void EditorOnTextChanged(object? sender, EventArgs e)
+    private void EditorOnSavePointLeft(object? sender, EventArgs e)
     {
         if (!_loading)
         {
-            _dirty = true;
-            UpdateTitle();
+            SetDirty(true);
         }
-        UpdateStatus();
+    }
+
+    private void EditorOnSavePointReached(object? sender, EventArgs e)
+    {
+        if (!_loading)
+        {
+            SetDirty(false);
+        }
+    }
+
+    private void SetDirty(bool dirty)
+    {
+        if (_dirty == dirty)
+        {
+            return;
+        }
+
+        _dirty = dirty;
+        UpdateTitle();
     }
 
     private void NewDocument()
@@ -423,7 +443,6 @@ public sealed class MainForm : Form
             _editor.Text = text;
             _editor.GotoPosition(0);
             ResetUndoBaseline();
-            _dirty = false;
         }
         finally
         {
@@ -451,7 +470,8 @@ public sealed class MainForm : Form
         {
             TextFileService.Save(path, _editor.Text, _encoding);
             _filePath = path;
-            _dirty = false;
+            _editor.SetSavePoint();
+            SetDirty(false);
             UpdateTitle();
             return true;
         }
@@ -500,9 +520,11 @@ public sealed class MainForm : Form
         MessageBox.Show(this,
             "参照モードは既定でONです。モード > 参照モード で編集可能に切り替えられます。\n\n" +
             "NORMAL: h j k l / 0 ^ $ / w b（word）/ W B（WORD）/ Ctrl+F Ctrl+B（1画面）/ Ctrl+D Ctrl+U（半画面）\n" +
+            "CHANGE: cw / ce（word末尾まで変更）/ cW（WORD末尾まで変更）/ c$（行末まで変更）\n" +
             "検索: /文字列 / ?文字列 / n（同方向）/ N（逆方向）\n" +
             "COMMAND: :120（120行目）/ :$（最終行）/ :5y a / :5,10y a / :pu a / :20pu a\n" +
             "その他: e / gg G / x / dd / yy / p P / u / Ctrl+R\n" +
+            "Undoでsave pointまで戻るとタイトルの * は自動的に消えます。\n" +
             "INSERT: i / a / o / O、EscでNORMALへ戻る",
             "viキーバインド", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }

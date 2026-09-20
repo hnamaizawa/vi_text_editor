@@ -13,6 +13,7 @@ public sealed class ViKeyProcessor
     }
 
     public EditorMode Mode { get; private set; } = EditorMode.Normal;
+    public bool HasPendingCommand => _pending is not null;
 
     public event EventHandler? ModeChanged;
 
@@ -58,6 +59,24 @@ public sealed class ViKeyProcessor
             if (pending == "y" && key == "y")
             {
                 YankCurrentLine();
+                return true;
+            }
+
+            if (pending == "c" && key is "w" or "e")
+            {
+                ChangeWord(bigWord: false);
+                return true;
+            }
+
+            if (pending == "c" && key == "W")
+            {
+                ChangeWord(bigWord: true);
+                return true;
+            }
+
+            if (pending == "c" && key == "$")
+            {
+                ChangeToLineEnd();
                 return true;
             }
 
@@ -118,6 +137,7 @@ public sealed class ViKeyProcessor
             case "g":
             case "d":
             case "y":
+            case "c":
                 _pending = key;
                 return true;
             case "x":
@@ -314,6 +334,71 @@ public sealed class ViKeyProcessor
         _editor.MoveCaret(lastBreak < 0 ? 0 : Math.Min(lastBreak + 1, text.Length - 1));
     }
 
+    private void ChangeWord(bool bigWord)
+    {
+        var text = _editor.Text;
+        if (text.Length == 0)
+        {
+            SetMode(EditorMode.Insert);
+            return;
+        }
+
+        var start = Math.Clamp(_editor.CaretPosition, 0, text.Length - 1);
+        var lineEnd = LineEndExclusive(text, start);
+        if (start >= lineEnd)
+        {
+            SetMode(EditorMode.Insert);
+            return;
+        }
+
+        var end = start;
+        if (char.IsWhiteSpace(text[start]))
+        {
+            while (end < lineEnd && char.IsWhiteSpace(text[end])) end++;
+        }
+        else if (bigWord)
+        {
+            while (end < lineEnd && !char.IsWhiteSpace(text[end])) end++;
+        }
+        else
+        {
+            var wordClass = ClassifySmallWord(text[start]);
+            while (end < lineEnd && ClassifySmallWord(text[end]) == wordClass) end++;
+        }
+
+        if (end > start)
+        {
+            _register = text.Substring(start, end - start);
+            _registerIsLinewise = false;
+            _editor.DeleteRange(start, end - start);
+            _editor.MoveCaret(start);
+        }
+
+        SetMode(EditorMode.Insert);
+    }
+
+    private void ChangeToLineEnd()
+    {
+        var text = _editor.Text;
+        if (text.Length == 0)
+        {
+            SetMode(EditorMode.Insert);
+            return;
+        }
+
+        var start = Math.Clamp(_editor.CaretPosition, 0, text.Length - 1);
+        var end = LineEndExclusive(text, start);
+        if (end > start)
+        {
+            _register = text.Substring(start, end - start);
+            _registerIsLinewise = false;
+            _editor.DeleteRange(start, end - start);
+            _editor.MoveCaret(start);
+        }
+
+        SetMode(EditorMode.Insert);
+    }
+
     private void DeleteCharacter()
     {
         var text = _editor.Text;
@@ -478,6 +563,13 @@ public sealed class ViKeyProcessor
         _editor.MoveCaret(start);
     }
 
+    private static SmallWordClass ClassifySmallWord(char c)
+    {
+        if (char.IsWhiteSpace(c)) return SmallWordClass.Whitespace;
+        if (IsWord(c)) return SmallWordClass.Keyword;
+        return SmallWordClass.Punctuation;
+    }
+
     private static bool IsWord(char c) => char.IsLetterOrDigit(c) || c == '_';
 
     private static int LineStart(string text, int position)
@@ -517,5 +609,12 @@ public sealed class ViKeyProcessor
         if (text.Contains('\n')) return "\n";
         if (text.Contains('\r')) return "\r";
         return Environment.NewLine;
+    }
+
+    private enum SmallWordClass
+    {
+        Whitespace,
+        Keyword,
+        Punctuation
     }
 }
