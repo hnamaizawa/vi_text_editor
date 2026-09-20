@@ -8,6 +8,7 @@ internal static class MainFormWorkspaceBridge
 {
     private static readonly FieldInfo? FilePathField = typeof(MainForm).GetField("_filePath", BindingFlags.Instance | BindingFlags.NonPublic);
     private static readonly FieldInfo? NewLineField = typeof(MainForm).GetField("_newLine", BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly FieldInfo? ForceCloseField = typeof(MainForm).GetField("_forceClose", BindingFlags.Instance | BindingFlags.NonPublic);
     private static readonly MethodInfo? OpenFilePathMethod = typeof(MainForm).GetMethod("OpenFilePath", BindingFlags.Instance | BindingFlags.NonPublic);
 
     public static bool OpenPath(MainForm form, string path)
@@ -26,6 +27,12 @@ internal static class MainFormWorkspaceBridge
     public static string? GetFilePath(MainForm form) => FilePathField?.GetValue(form) as string;
 
     public static Scintilla? GetEditor(MainForm form) => FindControls<Scintilla>(form).FirstOrDefault();
+
+    public static void AllowDeferredClose(MainForm form)
+    {
+        if (form.IsDisposed) return;
+        ForceCloseField?.SetValue(form, true);
+    }
 
     public static void Install(MainForm form, EditorWorkspaceForm workspace)
     {
@@ -105,7 +112,7 @@ internal static class MainFormWorkspaceBridge
     private static void FormatJson(MainForm form)
     {
         var editor = GetEditor(form);
-        if (editor is null) return;
+        if (editor is null || editor.IsDisposed) return;
         if (editor.ReadOnly)
         {
             MessageBox.Show(form, "JSONを整形するには参照モードをOFFにしてください。", "vi_text_editor", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -135,9 +142,9 @@ internal static class MainFormWorkspaceBridge
         var help = menu.Items.OfType<ToolStripMenuItem>().FirstOrDefault(item => item.Text.Contains("ヘルプ", StringComparison.Ordinal));
         if (help is null) return;
         ReplaceMenuItem(help, item => item.Text.Contains("バージョン情報", StringComparison.Ordinal),
-            new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show("vi_text_editor v0.1.13\nTabbed workspace / Large File / Recent Files / JSON / Markdown", "バージョン情報", MessageBoxButtons.OK, MessageBoxIcon.Information)));
-        help.DropDownItems.Add(new ToolStripMenuItem("v0.1.13 ワークスペース操作", null, (_, _) => MessageBox.Show(
-            "Ctrl+T: 新しいタブ\nCtrl+W: タブを閉じる\nCtrl+Tab: 次のタブ\nCtrl+Shift+Tab: 前のタブ\n\n64MiB以上のテキストはLarge Fileモードでストリーミング表示します。\nJSON整形: Ctrl+Shift+J\nMarkdownプレビュー: Ctrl+Shift+M",
+            new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show("vi_text_editor v0.1.14\nDisposed-control crash fix / X-Y cursor coordinates", "バージョン情報", MessageBoxButtons.OK, MessageBoxIcon.Information)));
+        help.DropDownItems.Add(new ToolStripMenuItem("v0.1.14 ワークスペース操作", null, (_, _) => MessageBox.Show(
+            "Ctrl+T: 新しいタブ\nCtrl+W: タブを閉じる\nCtrl+Tab: 次のタブ\nCtrl+Shift+Tab: 前のタブ\n\n右下: X=桁 / Y=行（1始まり）\n64MiB以上のテキストはLarge Fileモードでストリーミング表示します。\nJSON整形: Ctrl+Shift+J\nMarkdownプレビュー: Ctrl+Shift+M",
             "ワークスペース操作", MessageBoxButtons.OK, MessageBoxIcon.Information)));
     }
 
@@ -148,24 +155,55 @@ internal static class MainFormWorkspaceBridge
         var position = status?.Items.OfType<ToolStripStatusLabel>().LastOrDefault();
         if (editor is null || position is null) return;
 
+        position.AutoSize = false;
+        position.Width = 170;
+        position.TextAlign = ContentAlignment.MiddleRight;
+        position.ToolTipText = "X: 1始まりの桁位置 / Y: 1始まりの行番号";
+
         string? lastPath = null;
-        var timer = new System.Windows.Forms.Timer { Interval = 250 };
+        void RefreshCoordinateAndPath()
+        {
+            if (form.IsDisposed || form.Disposing || editor.IsDisposed || editor.Disposing) return;
+            try
+            {
+                var caret = Math.Clamp(editor.CurrentPosition, 0, editor.TextLength);
+                var y = editor.LineFromPosition(caret) + 1;
+                var x = editor.GetColumn(caret) + 1;
+                position.Text = $"X={x}  Y={y}";
+
+                var path = GetFilePath(form);
+                if (!string.Equals(lastPath, path, StringComparison.OrdinalIgnoreCase))
+                {
+                    lastPath = path;
+                    workspace.NotifyEditorPathChanged(form, path);
+                }
+            }
+            catch (ObjectDisposedException)
+            {
+                // A child editor can be in the final WinForms disposal phase while a queued UI event remains.
+                // Do not let a status refresh turn a normal tab close into a JIT exception.
+            }
+        }
+
+        editor.UpdateUI += (_, _) => RefreshCoordinateAndPath();
+        editor.MouseUp += (_, _) => RefreshCoordinateAndPath();
+        editor.KeyUp += (_, _) => RefreshCoordinateAndPath();
+        form.Shown += (_, _) => RefreshCoordinateAndPath();
+
+        var timer = new System.Windows.Forms.Timer { Interval = 200 };
         timer.Tick += (_, _) =>
         {
-            if (form.IsDisposed) { timer.Stop(); timer.Dispose(); return; }
-            var caret = Math.Clamp(editor.CurrentPosition, 0, editor.TextLength);
-            var y = editor.LineFromPosition(caret) + 1;
-            var x = editor.GetColumn(caret) + 1;
-            position.Text = $"X {x}, Y {y}";
-            var path = GetFilePath(form);
-            if (!string.Equals(lastPath, path, StringComparison.OrdinalIgnoreCase))
+            if (form.IsDisposed || form.Disposing || editor.IsDisposed || editor.Disposing)
             {
-                lastPath = path;
-                workspace.NotifyEditorPathChanged(form, path);
+                timer.Stop();
+                timer.Dispose();
+                return;
             }
+            RefreshCoordinateAndPath();
         };
         form.FormClosed += (_, _) => { timer.Stop(); timer.Dispose(); };
         timer.Start();
+        RefreshCoordinateAndPath();
     }
 
     private static void ReplaceMenuItem(ToolStripMenuItem parent, Func<ToolStripMenuItem, bool> predicate, ToolStripMenuItem replacement)

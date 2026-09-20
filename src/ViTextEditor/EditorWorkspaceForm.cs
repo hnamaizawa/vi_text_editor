@@ -7,6 +7,7 @@ internal sealed class EditorWorkspaceForm : Form
     private readonly TabControl _tabs = new();
     private readonly RecentFileStore _recentFiles = new();
     private readonly Dictionary<TabPage, WorkspaceTab> _sessions = new();
+    private readonly HashSet<MainForm> _deferredClosePass = [];
     private bool _closingWorkspace;
 
     public EditorWorkspaceForm()
@@ -126,6 +127,7 @@ internal sealed class EditorWorkspaceForm : Form
         var session = new WorkspaceTab(WorkspaceTabKind.Editor, path, child, null, null);
         _sessions[page] = session;
         MainFormWorkspaceBridge.Install(child, this);
+        child.FormClosing += (_, e) => DeferEmbeddedEditorClose(child, e);
         child.FormClosed += (_, _) => RemoveClosedEditorTab(page);
         child.TextChanged += (_, _) => UpdateTabTitle(page, session);
         child.Show();
@@ -149,6 +151,26 @@ internal sealed class EditorWorkspaceForm : Form
         UpdateTabTitle(page, session);
         if (select) _tabs.SelectedTab = page;
         UpdateWorkspaceTitle();
+    }
+
+    private void DeferEmbeddedEditorClose(MainForm editor, FormClosingEventArgs e)
+    {
+        if (_closingWorkspace || e.Cancel || editor.IsDisposed) return;
+
+        // MainForm.Close() can be invoked from inside the command-line KeyDown handler (:q/:q!/:wq/:x).
+        // Disposing the embedded form synchronously would invalidate its Scintilla control before that
+        // KeyDown handler finishes and its final UpdateStatus() call runs. Cancel the first close and
+        // perform the actual close on the next UI message instead.
+        if (_deferredClosePass.Remove(editor)) return;
+
+        e.Cancel = true;
+        BeginInvoke(new Action(() =>
+        {
+            if (IsDisposed || Disposing || editor.IsDisposed) return;
+            _deferredClosePass.Add(editor);
+            MainFormWorkspaceBridge.AllowDeferredClose(editor);
+            editor.Close();
+        }));
     }
 
     private void AddLargeFileTab(string path, bool select)
