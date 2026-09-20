@@ -50,11 +50,11 @@ internal static class SyntaxHighlightingService
                 ConfigureYaml(editor);
                 break;
             default:
-                editor.Lexer = Lexer.SCLEX_NULL;
+                editor.LexerName = string.Empty;
                 break;
         }
 
-        editor.Colourise(0, -1);
+        editor.Colorize(0, -1);
         return language;
     }
 
@@ -63,7 +63,7 @@ internal static class SyntaxHighlightingService
         var defaultFont = editor.Styles[Style.Default].Font;
         var defaultSize = editor.Styles[Style.Default].SizeF;
 
-        editor.Lexer = Lexer.SCLEX_NULL;
+        editor.LexerName = string.Empty;
         editor.Styles[Style.Default].ForeColor = SystemColors.WindowText;
         editor.Styles[Style.Default].BackColor = SystemColors.Window;
         editor.Styles[Style.Default].Bold = false;
@@ -78,7 +78,7 @@ internal static class SyntaxHighlightingService
 
     private static void ConfigureMarkdown(Scintilla editor)
     {
-        editor.Lexer = Lexer.SCLEX_MARKDOWN;
+        editor.LexerName = "markdown";
 
         SetStyle(editor, 2, HeadingColor, bold: true);  // strong **text**
         SetStyle(editor, 3, HeadingColor, bold: true);  // strong __text__
@@ -107,7 +107,7 @@ internal static class SyntaxHighlightingService
 
     private static void ConfigureJson(Scintilla editor)
     {
-        editor.Lexer = Lexer.SCLEX_JSON;
+        editor.LexerName = "json";
         SetStyle(editor, 1, NumberColor);     // number
         SetStyle(editor, 2, StringColor);     // string
         SetStyle(editor, 4, PropertyColor, bold: true); // property name
@@ -120,7 +120,7 @@ internal static class SyntaxHighlightingService
 
     private static void ConfigureXml(Scintilla editor)
     {
-        editor.Lexer = Lexer.SCLEX_XML;
+        editor.LexerName = "xml";
         SetStyle(editor, 1, KeywordColor, bold: true); // tag
         SetStyle(editor, 2, Color.Firebrick, bold: true); // unknown tag
         SetStyle(editor, 3, PropertyColor); // attribute
@@ -135,7 +135,8 @@ internal static class SyntaxHighlightingService
 
     private static void ConfigureCSharp(Scintilla editor)
     {
-        editor.Lexer = Lexer.SCLEX_CSHARP;
+        // Scintilla5.NET maps SCLEX_CSHARP to the Lexilla "cpp" lexer.
+        editor.LexerName = "cpp";
         ConfigureCLikeStyles(editor);
         editor.SetKeywords(0,
             "abstract as base bool break byte case catch char checked class const continue decimal default delegate do double else enum event explicit extern false finally fixed float for foreach goto if implicit in int interface internal is lock long namespace new null object operator out override params private protected public readonly record ref return sbyte sealed short sizeof stackalloc static string struct switch this throw true try typeof uint ulong unchecked unsafe ushort using virtual void volatile while async await dynamic get init required set value var when where with yield");
@@ -143,7 +144,8 @@ internal static class SyntaxHighlightingService
 
     private static void ConfigureJavaScript(Scintilla editor, bool typeScript)
     {
-        editor.Lexer = Lexer.SCLEX_JAVASCRIPT;
+        // Scintilla5.NET maps SCLEX_JAVASCRIPT to Lexilla "cpp" as well.
+        editor.LexerName = "cpp";
         ConfigureCLikeStyles(editor);
         var keywords =
             "as async await break case catch class const continue debugger default delete do else export extends false finally for from function get if import in instanceof let new null of return set static super switch this throw true try typeof undefined var void while with yield";
@@ -175,7 +177,7 @@ internal static class SyntaxHighlightingService
 
     private static void ConfigurePython(Scintilla editor)
     {
-        editor.Lexer = Lexer.SCLEX_PYTHON;
+        editor.LexerName = "python";
         SetStyle(editor, 1, CommentColor, italic: true);
         SetStyle(editor, 2, NumberColor);
         SetStyle(editor, 3, StringColor);
@@ -196,7 +198,7 @@ internal static class SyntaxHighlightingService
 
     private static void ConfigureYaml(Scintilla editor)
     {
-        editor.Lexer = Lexer.SCLEX_YAML;
+        editor.LexerName = "yaml";
         SetStyle(editor, 1, CommentColor, italic: true);
         SetStyle(editor, 2, PropertyColor, bold: true);
         SetStyle(editor, 3, KeywordColor, bold: true);
