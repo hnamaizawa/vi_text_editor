@@ -1,0 +1,273 @@
+using ViTextEditor.Core.IO;
+
+namespace ViTextEditor;
+
+internal sealed class EditorWorkspaceForm : Form
+{
+    private readonly TabControl _tabs = new();
+    private readonly RecentFileStore _recentFiles = new();
+    private readonly Dictionary<TabPage, WorkspaceTab> _sessions = new();
+    private bool _closingWorkspace;
+
+    public EditorWorkspaceForm()
+    {
+        Text = "vi_text_editor";
+        Width = 1180;
+        Height = 820;
+        StartPosition = FormStartPosition.CenterScreen;
+
+        _tabs.Dock = DockStyle.Fill;
+        _tabs.Padding = new Point(16, 5);
+        _tabs.SelectedIndexChanged += (_, _) => UpdateWorkspaceTitle();
+        Controls.Add(_tabs);
+
+        FormClosing += WorkspaceOnFormClosing;
+        AddBlankEditorTab(select: true);
+    }
+
+    public RecentFileStore RecentFiles => _recentFiles;
+
+    public void NewTab() => AddBlankEditorTab(select: true);
+
+    public void OpenFileFromDialog()
+    {
+        using var dialog = new OpenFileDialog
+        {
+            Filter = "テキスト/データファイル|*.txt;*.log;*.csv;*.md;*.markdown;*.json;*.xml;*.cs;*.py;*.js;*.ts;*.yaml;*.yml|すべてのファイル|*.*",
+            CheckFileExists = true,
+            Multiselect = true
+        };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        foreach (var file in dialog.FileNames) OpenPath(file, select: true);
+    }
+
+    public void OpenPath(string path, bool select = true)
+    {
+        string fullPath;
+        try { fullPath = Path.GetFullPath(path); }
+        catch { return; }
+        if (!File.Exists(fullPath))
+        {
+            MessageBox.Show(this, $"ファイルが見つかりません。\n{fullPath}", "vi_text_editor", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        var existing = _sessions.FirstOrDefault(pair => string.Equals(pair.Value.FilePath, fullPath, StringComparison.OrdinalIgnoreCase));
+        if (existing.Key is not null)
+        {
+            if (select) _tabs.SelectedTab = existing.Key;
+            return;
+        }
+
+        var length = new FileInfo(fullPath).Length;
+        if (LargeFilePolicy.ShouldUseLargeFileMode(length))
+        {
+            AddLargeFileTab(fullPath, select);
+            return;
+        }
+        AddEditorTab(fullPath, select);
+    }
+
+    public void OpenMarkdownPreview(MainForm source)
+    {
+        var editor = MainFormWorkspaceBridge.GetEditor(source);
+        if (editor is null) return;
+        var sourcePath = MainFormWorkspaceBridge.GetFilePath(source);
+        var sourceName = sourcePath is null ? "無題" : Path.GetFileName(sourcePath);
+        var page = new TabPage($"{sourceName} [Markdown]");
+        var preview = new MarkdownPreviewControl(sourceName, () => source.IsDisposed ? string.Empty : editor.Text);
+        page.Controls.Add(preview);
+        _tabs.TabPages.Add(page);
+        _sessions[page] = new WorkspaceTab(WorkspaceTabKind.MarkdownPreview, null, null, preview, null);
+        _tabs.SelectedTab = page;
+        UpdateWorkspaceTitle();
+    }
+
+    public void CloseCurrentTab()
+    {
+        if (_tabs.SelectedTab is { } page) CloseTab(page);
+    }
+
+    public void SelectNextTab(int delta)
+    {
+        if (_tabs.TabCount < 2) return;
+        var next = (_tabs.SelectedIndex + delta) % _tabs.TabCount;
+        if (next < 0) next += _tabs.TabCount;
+        _tabs.SelectedIndex = next;
+    }
+
+    public void ExitApplication() => Close();
+
+    public void NotifyEditorPathChanged(MainForm editorForm, string? path)
+    {
+        var entry = _sessions.FirstOrDefault(pair => ReferenceEquals(pair.Value.EditorForm, editorForm));
+        if (entry.Key is null) return;
+        var current = entry.Value;
+        current.FilePath = path;
+        if (!string.IsNullOrWhiteSpace(path)) _recentFiles.Add(path);
+        UpdateTabTitle(entry.Key, current);
+    }
+
+    private void AddBlankEditorTab(bool select) => AddEditorTab(null, select);
+
+    private void AddEditorTab(string? path, bool select)
+    {
+        var page = new TabPage("無題");
+        var child = new MainForm
+        {
+            TopLevel = false,
+            FormBorderStyle = FormBorderStyle.None,
+            Dock = DockStyle.Fill,
+            StartPosition = FormStartPosition.Manual
+        };
+        page.Controls.Add(child);
+        _tabs.TabPages.Add(page);
+
+        var session = new WorkspaceTab(WorkspaceTabKind.Editor, path, child, null, null);
+        _sessions[page] = session;
+        MainFormWorkspaceBridge.Install(child, this);
+        child.FormClosed += (_, _) => RemoveClosedEditorTab(page);
+        child.TextChanged += (_, _) => UpdateTabTitle(page, session);
+        child.Show();
+        ImeSupport.Configure(child);
+
+        if (path is not null)
+        {
+            if (!MainFormWorkspaceBridge.OpenPath(child, path))
+            {
+                child.Dispose();
+                _sessions.Remove(page);
+                _tabs.TabPages.Remove(page);
+                page.Dispose();
+                if (_tabs.TabCount == 0) AddBlankEditorTab(true);
+                return;
+            }
+            session.FilePath = Path.GetFullPath(path);
+            _recentFiles.Add(session.FilePath);
+        }
+
+        UpdateTabTitle(page, session);
+        if (select) _tabs.SelectedTab = page;
+        UpdateWorkspaceTitle();
+    }
+
+    private void AddLargeFileTab(string path, bool select)
+    {
+        var page = new TabPage(Path.GetFileName(path) + " [LARGE]");
+        var viewer = new LargeTextViewerControl();
+        page.Controls.Add(viewer);
+        _tabs.TabPages.Add(page);
+        var session = new WorkspaceTab(WorkspaceTabKind.LargeFile, path, null, null, viewer);
+        _sessions[page] = session;
+
+        Cursor = Cursors.WaitCursor;
+        try
+        {
+            if (!viewer.LoadFile(path, out var error))
+            {
+                MessageBox.Show(this, error ?? "大容量ファイルを開けません。", "vi_text_editor", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                _sessions.Remove(page);
+                _tabs.TabPages.Remove(page);
+                page.Dispose();
+                return;
+            }
+        }
+        finally { Cursor = Cursors.Default; }
+
+        _recentFiles.Add(path);
+        if (select) _tabs.SelectedTab = page;
+        viewer.FocusViewer();
+        UpdateWorkspaceTitle();
+    }
+
+    private void CloseTab(TabPage page)
+    {
+        if (!_sessions.TryGetValue(page, out var session)) return;
+        if (session.EditorForm is { } editor)
+        {
+            editor.Close();
+            return;
+        }
+
+        session.LargeViewer?.CloseFile();
+        _sessions.Remove(page);
+        _tabs.TabPages.Remove(page);
+        page.Dispose();
+        if (_tabs.TabCount == 0 && !_closingWorkspace) AddBlankEditorTab(true);
+        UpdateWorkspaceTitle();
+    }
+
+    private void RemoveClosedEditorTab(TabPage page)
+    {
+        if (!_sessions.Remove(page)) return;
+        _tabs.TabPages.Remove(page);
+        page.Dispose();
+        if (_tabs.TabCount == 0 && !_closingWorkspace) AddBlankEditorTab(true);
+        UpdateWorkspaceTitle();
+    }
+
+    private void UpdateTabTitle(TabPage page, WorkspaceTab session)
+    {
+        if (session.EditorForm is { } form)
+        {
+            var title = form.Text;
+            const string suffix = " - vi_text_editor";
+            if (title.EndsWith(suffix, StringComparison.Ordinal)) title = title[..^suffix.Length];
+            page.Text = title.Length > 32 ? title[..29] + "..." : title;
+            var path = MainFormWorkspaceBridge.GetFilePath(form);
+            if (!string.Equals(path, session.FilePath, StringComparison.OrdinalIgnoreCase))
+            {
+                session.FilePath = path;
+                if (!string.IsNullOrWhiteSpace(path)) _recentFiles.Add(path);
+            }
+        }
+    }
+
+    private void UpdateWorkspaceTitle()
+    {
+        var selected = _tabs.SelectedTab;
+        Text = selected is null ? "vi_text_editor" : $"{selected.Text} - vi_text_editor workspace";
+    }
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        if (keyData == (Keys.Control | Keys.T)) { NewTab(); return true; }
+        if (keyData == (Keys.Control | Keys.W)) { CloseCurrentTab(); return true; }
+        if (keyData == (Keys.Control | Keys.Tab)) { SelectNextTab(1); return true; }
+        if (keyData == (Keys.Control | Keys.Shift | Keys.Tab)) { SelectNextTab(-1); return true; }
+        return base.ProcessCmdKey(ref msg, keyData);
+    }
+
+    private void WorkspaceOnFormClosing(object? sender, FormClosingEventArgs e)
+    {
+        if (_closingWorkspace) return;
+        _closingWorkspace = true;
+        foreach (var form in _sessions.Values.Select(s => s.EditorForm).Where(f => f is not null).Cast<MainForm>().ToArray())
+        {
+            if (form.IsDisposed) continue;
+            form.Close();
+            if (!form.IsDisposed)
+            {
+                e.Cancel = true;
+                _closingWorkspace = false;
+                return;
+            }
+        }
+    }
+
+    private enum WorkspaceTabKind { Editor, LargeFile, MarkdownPreview }
+
+    private sealed class WorkspaceTab(
+        WorkspaceTabKind kind,
+        string? filePath,
+        MainForm? editorForm,
+        MarkdownPreviewControl? markdownPreview,
+        LargeTextViewerControl? largeViewer)
+    {
+        public WorkspaceTabKind Kind { get; } = kind;
+        public string? FilePath { get; set; } = filePath;
+        public MainForm? EditorForm { get; } = editorForm;
+        public MarkdownPreviewControl? MarkdownPreview { get; } = markdownPreview;
+        public LargeTextViewerControl? LargeViewer { get; } = largeViewer;
+    }
+}
