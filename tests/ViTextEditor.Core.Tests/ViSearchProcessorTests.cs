@@ -9,7 +9,7 @@ public sealed class ViSearchProcessorTests
     public void ForwardSearchThenNRepeatsInSameDirection()
     {
         var editor = new FakeEditor("alpha beta alpha beta", 0);
-        var search = new ViSearchProcessor(editor);
+        var search = new ViSearchProcessor(editor, new ViOptions());
 
         Assert.True(search.Search("beta", forward: true));
         Assert.Equal(6, editor.CaretPosition);
@@ -22,7 +22,7 @@ public sealed class ViSearchProcessorTests
     public void UppercaseNRepeatsInOppositeDirection()
     {
         var editor = new FakeEditor("alpha beta alpha beta", 17);
-        var search = new ViSearchProcessor(editor);
+        var search = new ViSearchProcessor(editor, new ViOptions());
 
         Assert.True(search.Search("beta", forward: false));
         Assert.Equal(6, editor.CaretPosition);
@@ -35,10 +35,37 @@ public sealed class ViSearchProcessorTests
     public void SearchWrapsAroundLikeVimWrapscan()
     {
         var editor = new FakeEditor("one two one", 8);
-        var search = new ViSearchProcessor(editor);
+        var search = new ViSearchProcessor(editor, new ViOptions());
 
         Assert.True(search.Search("one", forward: true));
         Assert.Equal(0, editor.CaretPosition);
+    }
+
+    [Fact]
+    public void IgnoreCaseOptionMatchesDifferentCase()
+    {
+        var editor = new FakeEditor("alpha BETA gamma", 0);
+        var options = new ViOptions { IgnoreCase = true };
+        var search = new ViSearchProcessor(editor, options);
+
+        Assert.True(search.Search("beta", forward: true));
+        Assert.Equal(6, editor.CaretPosition);
+    }
+
+    [Fact]
+    public void PatternCaseOverridesMatchVimBackslashCAndUppercaseC()
+    {
+        var editor = new FakeEditor("alpha BETA beta", 0);
+        var options = new ViOptions { IgnoreCase = false };
+        var search = new ViSearchProcessor(editor, options);
+
+        Assert.True(search.Search("beta\\c", forward: true));
+        Assert.Equal(6, editor.CaretPosition);
+
+        editor.MoveCaret(0);
+        options.IgnoreCase = true;
+        Assert.True(search.Search("beta\\C", forward: true));
+        Assert.Equal(11, editor.CaretPosition);
     }
 
     private sealed class FakeEditor : IEditorAdapter

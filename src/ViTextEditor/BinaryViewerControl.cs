@@ -1,4 +1,5 @@
 using System.Text;
+using ViTextEditor.Core.Editor;
 
 namespace ViTextEditor;
 
@@ -23,6 +24,7 @@ internal sealed class BinaryViewerControl : UserControl
     private byte[]? _lastSearchPattern;
     private string? _lastSearchQuery;
     private bool _lastSearchForward = true;
+    private bool _lastSearchIsHex;
     private long? _lastMatchOffset;
 
     static BinaryViewerControl()
@@ -128,6 +130,7 @@ internal sealed class BinaryViewerControl : UserControl
     }
 
     public event Action<bool>? SearchInputRequested;
+    public event Action? ExInputRequested;
     public event EventHandler? StatusChanged;
 
     public string StatusText
@@ -138,7 +141,8 @@ internal sealed class BinaryViewerControl : UserControl
             var offset = CurrentByteOffset;
             var width = _length > uint.MaxValue ? 16 : 8;
             var match = _lastMatchOffset is long found ? $"  Match 0x{found.ToString($"X{width}")}" : string.Empty;
-            return $"0x{offset.ToString($"X{width}")} / {_length:N0} bytes  {EffectiveEncodingLabel}{match}";
+            var ic = ViOptions.Shared.IgnoreCase ? "  IC" : string.Empty;
+            return $"0x{offset.ToString($"X{width}")} / {_length:N0} bytes  {EffectiveEncodingLabel}{ic}{match}";
         }
     }
 
@@ -157,6 +161,7 @@ internal sealed class BinaryViewerControl : UserControl
             _pendingG = false;
             _lastSearchPattern = null;
             _lastSearchQuery = null;
+            _lastSearchIsHex = false;
             _lastMatchOffset = null;
 
             var rowCount = (_length + BytesPerRow - 1) / BytesPerRow;
@@ -184,16 +189,23 @@ internal sealed class BinaryViewerControl : UserControl
         _grid.Focus();
     }
 
+    public void OptionsChanged()
+    {
+        UpdateHeader();
+        StatusChanged?.Invoke(this, EventArgs.Empty);
+    }
+
     public bool Search(string query, bool forward)
     {
         if (_stream is null || _length == 0 || string.IsNullOrEmpty(query)) return false;
-        if (!TryBuildSearchPattern(query, out var pattern)) return false;
+        if (!TryBuildSearchPattern(query, out var pattern, out var isHex)) return false;
 
         _lastSearchQuery = query;
         _lastSearchPattern = pattern;
         _lastSearchForward = forward;
+        _lastSearchIsHex = isHex;
         _lastMatchOffset = null;
-        return FindAndSelect(pattern, forward, CurrentByteOffset);
+        return FindAndSelect(pattern, forward, CurrentByteOffset, IgnoreCaseForSearch(isHex));
     }
 
     public bool RepeatSearch(bool reverseDirection)
@@ -201,7 +213,7 @@ internal sealed class BinaryViewerControl : UserControl
         if (_lastSearchPattern is null || _lastSearchPattern.Length == 0) return false;
         var forward = reverseDirection ? !_lastSearchForward : _lastSearchForward;
         var origin = _lastMatchOffset ?? CurrentByteOffset;
-        return FindAndSelect(_lastSearchPattern, forward, origin);
+        return FindAndSelect(_lastSearchPattern, forward, origin, IgnoreCaseForSearch(_lastSearchIsHex));
     }
 
     public void RefreshCurrentFile()
@@ -223,6 +235,7 @@ internal sealed class BinaryViewerControl : UserControl
         _pendingG = false;
         _lastSearchPattern = null;
         _lastSearchQuery = null;
+        _lastSearchIsHex = false;
         _lastMatchOffset = null;
         UpdateHeader();
         StatusChanged?.Invoke(this, EventArgs.Empty);
@@ -278,6 +291,14 @@ internal sealed class BinaryViewerControl : UserControl
         }
 
         if (e.Alt) return;
+
+        if (e.Shift && e.KeyCode == Keys.OemSemicolon)
+        {
+            _pendingG = false;
+            ExInputRequested?.Invoke();
+            Consume(e);
+            return;
+        }
 
         if (e.KeyCode == Keys.OemQuestion)
         {
@@ -335,6 +356,11 @@ internal sealed class BinaryViewerControl : UserControl
         else if (e.KeyChar == '?')
         {
             RequestSearch(forward: false);
+            e.Handled = true;
+        }
+        else if (e.KeyChar == ':')
+        {
+            ExInputRequested?.Invoke();
             e.Handled = true;
         }
     }
@@ -432,10 +458,11 @@ internal sealed class BinaryViewerControl : UserControl
         return result;
     }
 
-    private bool TryBuildSearchPattern(string query, out byte[] pattern)
+    private bool TryBuildSearchPattern(string query, out byte[] pattern, out bool isHex)
     {
         pattern = Array.Empty<byte>();
-        if (query.StartsWith("hex:", StringComparison.OrdinalIgnoreCase))
+        isHex = query.StartsWith("hex:", StringComparison.OrdinalIgnoreCase);
+        if (isHex)
         {
             var hex = query[4..]
                 .Replace(" ", string.Empty, StringComparison.Ordinal)
@@ -461,7 +488,9 @@ internal sealed class BinaryViewerControl : UserControl
         return pattern.Length is > 0 and <= MaxSearchPatternBytes;
     }
 
-    private bool FindAndSelect(byte[] pattern, bool forward, long origin)
+    private static bool IgnoreCaseForSearch(bool isHex) => !isHex && ViOptions.Shared.IgnoreCase;
+
+    private bool FindAndSelect(byte[] pattern, bool forward, long origin, bool ignoreCase)
     {
         if (_stream is null || pattern.Length == 0 || pattern.LongLength > _length) return false;
 
@@ -470,21 +499,21 @@ internal sealed class BinaryViewerControl : UserControl
         if (forward)
         {
             var start = Math.Min(lastStart + 1, origin + 1);
-            found = start <= lastStart ? FindForward(pattern, start, lastStart) : null;
+            found = start <= lastStart ? FindForward(pattern, start, lastStart, ignoreCase) : null;
             if (found is null)
             {
                 var wrapMax = Math.Min(lastStart, origin);
-                found = wrapMax >= 0 ? FindForward(pattern, 0, wrapMax) : null;
+                found = wrapMax >= 0 ? FindForward(pattern, 0, wrapMax, ignoreCase) : null;
             }
         }
         else
         {
             var start = Math.Min(lastStart, origin - 1);
-            found = start >= 0 ? FindBackward(pattern, start, 0) : null;
+            found = start >= 0 ? FindBackward(pattern, start, 0, ignoreCase) : null;
             if (found is null)
             {
                 var wrapMin = Math.Max(0, origin + 1);
-                found = lastStart >= wrapMin ? FindBackward(pattern, lastStart, wrapMin) : null;
+                found = lastStart >= wrapMin ? FindBackward(pattern, lastStart, wrapMin, ignoreCase) : null;
             }
         }
 
@@ -501,7 +530,7 @@ internal sealed class BinaryViewerControl : UserControl
         return true;
     }
 
-    private long? FindForward(byte[] pattern, long minStart, long maxStart)
+    private long? FindForward(byte[] pattern, long minStart, long maxStart, bool ignoreCase)
     {
         if (_stream is null || minStart > maxStart) return null;
         var buffer = new byte[SearchChunkSize + pattern.Length - 1];
@@ -514,7 +543,7 @@ internal sealed class BinaryViewerControl : UserControl
             var read = RandomAccess.Read(_stream.SafeFileHandle, buffer.AsSpan(0, requested), cursor);
             if (read < pattern.Length) return null;
 
-            var index = buffer.AsSpan(0, read).IndexOf(pattern);
+            var index = IndexOf(buffer.AsSpan(0, read), pattern, ignoreCase, startCount - 1);
             if (index >= 0 && index < startCount) return cursor + index;
             cursor += startCount;
         }
@@ -522,7 +551,7 @@ internal sealed class BinaryViewerControl : UserControl
         return null;
     }
 
-    private long? FindBackward(byte[] pattern, long maxStart, long minStart)
+    private long? FindBackward(byte[] pattern, long maxStart, long minStart, bool ignoreCase)
     {
         if (_stream is null || maxStart < minStart) return null;
         var buffer = new byte[SearchChunkSize + pattern.Length - 1];
@@ -536,7 +565,7 @@ internal sealed class BinaryViewerControl : UserControl
             var read = RandomAccess.Read(_stream.SafeFileHandle, buffer.AsSpan(0, requested), chunkStart);
             if (read >= pattern.Length)
             {
-                var index = LastIndexOf(buffer.AsSpan(0, read), pattern, Math.Min(startCount - 1, read - pattern.Length));
+                var index = LastIndexOf(buffer.AsSpan(0, read), pattern, Math.Min(startCount - 1, read - pattern.Length), ignoreCase);
                 if (index >= 0) return chunkStart + index;
             }
 
@@ -547,14 +576,43 @@ internal sealed class BinaryViewerControl : UserControl
         return null;
     }
 
-    private static int LastIndexOf(ReadOnlySpan<byte> data, ReadOnlySpan<byte> pattern, int maxStart)
+    private static int IndexOf(ReadOnlySpan<byte> data, ReadOnlySpan<byte> pattern, bool ignoreCase, int maxStart)
     {
-        for (var i = Math.Min(maxStart, data.Length - pattern.Length); i >= 0; i--)
+        if (!ignoreCase)
         {
-            if (data.Slice(i, pattern.Length).SequenceEqual(pattern)) return i;
+            var index = data.IndexOf(pattern);
+            return index <= maxStart ? index : -1;
+        }
+
+        var limit = Math.Min(maxStart, data.Length - pattern.Length);
+        for (var i = 0; i <= limit; i++)
+        {
+            if (ByteSequenceEquals(data.Slice(i, pattern.Length), pattern, ignoreCase: true)) return i;
         }
         return -1;
     }
+
+    private static int LastIndexOf(ReadOnlySpan<byte> data, ReadOnlySpan<byte> pattern, int maxStart, bool ignoreCase)
+    {
+        for (var i = Math.Min(maxStart, data.Length - pattern.Length); i >= 0; i--)
+        {
+            if (ByteSequenceEquals(data.Slice(i, pattern.Length), pattern, ignoreCase)) return i;
+        }
+        return -1;
+    }
+
+    private static bool ByteSequenceEquals(ReadOnlySpan<byte> data, ReadOnlySpan<byte> pattern, bool ignoreCase)
+    {
+        if (!ignoreCase) return data.SequenceEqual(pattern);
+        if (data.Length != pattern.Length) return false;
+        for (var i = 0; i < data.Length; i++)
+        {
+            if (FoldAscii(data[i]) != FoldAscii(pattern[i])) return false;
+        }
+        return true;
+    }
+
+    private static byte FoldAscii(byte value) => value is >= (byte)'A' and <= (byte)'Z' ? (byte)(value + 0x20) : value;
 
     private BinaryTextEncoding EffectiveEncoding
     {
@@ -578,9 +636,10 @@ internal sealed class BinaryViewerControl : UserControl
     private void UpdateHeader()
     {
         var searchHint = _lastSearchQuery is null ? "" : $"    /{_lastSearchQuery}";
+        var ic = ViOptions.Shared.IgnoreCase ? "    [ignorecase]" : string.Empty;
         _header.Text = _filePath is null
-            ? $"BINARY  16 bytes/row   OFFSET | HEX | TEXT    {EffectiveEncodingLabel}"
-            : $"BINARY  16 bytes/row   OFFSET | HEX | TEXT    {Path.GetFileName(_filePath)}    {_length:N0} bytes    {EffectiveEncodingLabel}{searchHint}";
+            ? $"BINARY  16 bytes/row   OFFSET | HEX | TEXT    {EffectiveEncodingLabel}{ic}"
+            : $"BINARY  16 bytes/row   OFFSET | HEX | TEXT    {Path.GetFileName(_filePath)}    {_length:N0} bytes    {EffectiveEncodingLabel}{ic}{searchHint}";
     }
 
     private BinaryTextEncoding DetectEncoding()

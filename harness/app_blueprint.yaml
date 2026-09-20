@@ -1,6 +1,6 @@
 project:
   name: vi_text_editor
-  version: 0.1.11
+  version: 0.1.12
   platform: windows
   ui: winforms
   editor_component: Scintilla5.NET
@@ -32,7 +32,11 @@ non_negotiable_invariants:
   - ctrl_f_and_ctrl_b_must_move_one_page_with_caret_following
   - ctrl_d_and_ctrl_u_must_move_half_page_with_caret_following
   - slash_and_question_search_must_support_n_and_N_repeat
+  - search_must_honor_global_ignorecase_and_pattern_backslash_c_backslash_C_overrides
   - colon_command_mode_must_be_visible_and_escape_cancelable
+  - command_and_search_histories_must_be_separate_and_recallable_with_up_down
+  - colon_set_ic_and_set_noic_must_toggle_global_ignorecase
+  - colon_set_ignorecase_must_apply_to_text_and_binary_search
   - colon_numeric_command_must_jump_to_requested_line
   - colon_yank_must_support_single_lines_ranges_and_named_registers
   - colon_yank_count_must_support_y3_y_space_3_and_named_register_count
@@ -42,12 +46,20 @@ non_negotiable_invariants:
   - normal_yank_must_be_available_to_ex_put
   - colon_put_must_support_named_registers_and_target_lines
   - uppercase_named_register_yank_must_append_to_lowercase_register
+  - colon_delete_must_support_current_line_ranges_and_register_capture
+  - colon_substitute_must_support_ranges_global_flag_and_case_flags
+  - colon_substitute_must_honor_ignorecase_when_i_or_I_is_not_specified
   - colon_edit_bang_must_reload_current_file_and_discard_buffer_changes
   - colon_edit_hash_must_open_alternate_file
+  - colon_edit_filename_must_open_requested_file_and_block_on_unsaved_changes_without_bang
+  - colon_quit_must_refuse_dirty_buffer_without_bang
   - colon_quit_bang_must_close_without_dirty_prompt
-  - colon_write_filename_must_save_as_requested_path
+  - colon_wq_and_x_must_follow_vim_write_then_quit_semantics
+  - colon_write_filename_must_write_a_copy_without_renaming_current_buffer
+  - colon_saveas_must_write_and_rename_current_buffer
+  - colon_write_bang_must_allow_overwriting_existing_target
   - alternate_file_must_track_previous_current_file
-  - reference_mode_must_allow_navigation_and_yank_but_block_put
+  - reference_mode_must_allow_navigation_yank_set_and_search_but_block_mutating_ex_commands
   - status_position_updates_must_not_scan_entire_document_per_keypress
   - normal_vi_motion_must_use_native_position_apis_instead_of_full_document_copies
   - scintilla_layout_cache_must_cover_visible_page
@@ -59,6 +71,8 @@ non_negotiable_invariants:
   - binary_text_auto_detection_must_prefer_bom_then_valid_utf8_then_shift_jis
   - binary_mode_must_support_j_k_ctrl_f_ctrl_b_ctrl_d_ctrl_u_gg_and_G_navigation
   - binary_mode_must_support_slash_question_n_and_N_search
+  - binary_mode_must_accept_colon_set_ic_and_set_noic
+  - binary_search_must_honor_ignorecase_for_text_search_but_not_raw_hex_search
   - binary_search_must_support_selected_text_encoding_and_hex_byte_patterns
   - binary_search_must_stream_file_chunks_instead_of_materializing_the_entire_file
   - binary_mode_must_not_materialize_the_entire_file_as_hex_text

@@ -9,7 +9,7 @@ public sealed class ViCommandProcessorTests
     public void NumericColonCommandMovesToOneBasedLine()
     {
         var editor = new FakeEditor("one\ntwo\nthree\nfour", 0);
-        var commands = new ViCommandProcessor(editor);
+        var commands = new ViCommandProcessor(editor, options: new ViOptions());
 
         Assert.True(commands.Execute("3"));
         Assert.Equal(8, editor.CaretPosition);
@@ -19,7 +19,7 @@ public sealed class ViCommandProcessorTests
     public void DollarColonCommandMovesToLastLine()
     {
         var editor = new FakeEditor("one\ntwo\nthree", 0);
-        var commands = new ViCommandProcessor(editor);
+        var commands = new ViCommandProcessor(editor, options: new ViOptions());
 
         Assert.True(commands.Execute("$"));
         Assert.Equal(8, editor.CaretPosition);
@@ -29,7 +29,7 @@ public sealed class ViCommandProcessorTests
     public void OversizedLineNumberClampsToLastLine()
     {
         var editor = new FakeEditor("one\ntwo\nthree", 0);
-        var commands = new ViCommandProcessor(editor);
+        var commands = new ViCommandProcessor(editor, options: new ViOptions());
 
         Assert.True(commands.Execute("999"));
         Assert.Equal(8, editor.CaretPosition);
@@ -40,7 +40,7 @@ public sealed class ViCommandProcessorTests
     {
         var editor = new FakeEditor("one\ntwo\nthree\nfour", 0);
         var registers = new ViRegisterStore();
-        var commands = new ViCommandProcessor(editor, registers);
+        var commands = new ViCommandProcessor(editor, registers, new ViOptions());
 
         Assert.True(commands.Execute("2,3y a"));
         Assert.Equal("one\ntwo\nthree\nfour", editor.Text);
@@ -57,7 +57,7 @@ public sealed class ViCommandProcessorTests
         {
             var editor = new FakeEditor("one\ntwo\nthree", 0);
             var registers = new ViRegisterStore();
-            var commands = new ViCommandProcessor(editor, registers);
+            var commands = new ViCommandProcessor(editor, registers, new ViOptions());
 
             Assert.True(commands.Execute(command));
             Assert.True(registers.TryGet('a', out var lines));
@@ -70,7 +70,7 @@ public sealed class ViCommandProcessorTests
     {
         var editor = new FakeEditor("one\ntwo\nthree\nfour\nfive", 4);
         var registers = new ViRegisterStore();
-        var commands = new ViCommandProcessor(editor, registers);
+        var commands = new ViCommandProcessor(editor, registers, new ViOptions());
 
         Assert.True(commands.Execute("y3"));
         Assert.True(registers.TryGet(null, out var lines));
@@ -84,7 +84,7 @@ public sealed class ViCommandProcessorTests
         {
             var editor = new FakeEditor("one\ntwo\nthree\nfour", 4);
             var registers = new ViRegisterStore();
-            var commands = new ViCommandProcessor(editor, registers);
+            var commands = new ViCommandProcessor(editor, registers, new ViOptions());
 
             Assert.True(commands.Execute(command));
             var register = command == "y a 3" ? 'a' : (char?)null;
@@ -98,7 +98,7 @@ public sealed class ViCommandProcessorTests
     {
         var editor = new FakeEditor("one\ntwo\nthree", 4);
         var registers = new ViRegisterStore();
-        var commands = new ViCommandProcessor(editor, registers);
+        var commands = new ViCommandProcessor(editor, registers, new ViOptions());
 
         Assert.True(commands.Execute("y9"));
         Assert.True(registers.TryGet(null, out var lines));
@@ -111,7 +111,7 @@ public sealed class ViCommandProcessorTests
     {
         var editor = new FakeEditor("one\ntwo\nthree\nfour", 4);
         var registers = new ViRegisterStore();
-        var commands = new ViCommandProcessor(editor, registers);
+        var commands = new ViCommandProcessor(editor, registers, new ViOptions());
         var vi = new ViKeyProcessor(editor, registers);
 
         Assert.True(commands.Execute("y2"));
@@ -126,7 +126,7 @@ public sealed class ViCommandProcessorTests
     {
         var editor = new FakeEditor("one\ntwo\nthree", 0);
         var registers = new ViRegisterStore();
-        var commands = new ViCommandProcessor(editor, registers);
+        var commands = new ViCommandProcessor(editor, registers, new ViOptions());
         var vi = new ViKeyProcessor(editor, registers);
 
         Assert.True(vi.Handle("y"));
@@ -142,7 +142,7 @@ public sealed class ViCommandProcessorTests
         var editor = new FakeEditor("one\ntwo\nthree", 0);
         var registers = new ViRegisterStore();
         registers.Yank('a', new[] { "X" });
-        var commands = new ViCommandProcessor(editor, registers);
+        var commands = new ViCommandProcessor(editor, registers, new ViOptions());
 
         Assert.True(commands.Execute("2pu a"));
         Assert.Equal("one\ntwo\nX\nthree", editor.Text);
@@ -156,7 +156,7 @@ public sealed class ViCommandProcessorTests
     {
         var editor = new FakeEditor("one\ntwo\nthree", 0);
         var registers = new ViRegisterStore();
-        var commands = new ViCommandProcessor(editor, registers);
+        var commands = new ViCommandProcessor(editor, registers, new ViOptions());
 
         Assert.True(commands.Execute("1y a"));
         Assert.True(commands.Execute("2y A"));
@@ -165,13 +165,70 @@ public sealed class ViCommandProcessorTests
     }
 
     [Fact]
-    public void PutIsReportedAsMutatingButYankAndJumpAreNot()
+    public void SetIgnoreCaseSupportsVimAliasesAndQuery()
+    {
+        var editor = new FakeEditor("one", 0);
+        var options = new ViOptions();
+        var commands = new ViCommandProcessor(editor, options: options);
+
+        Assert.True(commands.Execute("set ic"));
+        Assert.True(options.IgnoreCase);
+        Assert.Equal("ignorecase", commands.LastMessage);
+
+        Assert.True(commands.Execute("set ic?"));
+        Assert.Contains("ignorecase", commands.LastMessage);
+
+        Assert.True(commands.Execute("set noic"));
+        Assert.False(options.IgnoreCase);
+        Assert.Equal("noignorecase", commands.LastMessage);
+    }
+
+    [Fact]
+    public void SubstituteSupportsRangesGlobalAndIgnoreCase()
+    {
+        var editor = new FakeEditor("Foo foo\nfoo FOO\nkeep", 0);
+        var options = new ViOptions { IgnoreCase = true };
+        var commands = new ViCommandProcessor(editor, options: options);
+
+        Assert.True(commands.Execute("%s/foo/bar/g"));
+        Assert.Equal("bar bar\nbar bar\nkeep", editor.Text);
+    }
+
+    [Fact]
+    public void SubstituteUppercaseIOverridesIgnoreCase()
+    {
+        var editor = new FakeEditor("Foo foo", 0);
+        var options = new ViOptions { IgnoreCase = true };
+        var commands = new ViCommandProcessor(editor, options: options);
+
+        Assert.True(commands.Execute("s/foo/bar/I"));
+        Assert.Equal("Foo bar", editor.Text);
+    }
+
+    [Fact]
+    public void DeleteRangeYanksDeletedLinesIntoSharedRegister()
+    {
+        var editor = new FakeEditor("one\ntwo\nthree\nfour", 0);
+        var registers = new ViRegisterStore();
+        var commands = new ViCommandProcessor(editor, registers, new ViOptions());
+
+        Assert.True(commands.Execute("2,3delete"));
+        Assert.Equal("one\nfour", editor.Text);
+        Assert.True(registers.TryGet(null, out var lines));
+        Assert.Equal(new[] { "two", "three" }, lines);
+    }
+
+    [Fact]
+    public void PutSubstituteAndDeleteAreReportedAsMutating()
     {
         var editor = new FakeEditor("one\ntwo", 0);
-        var commands = new ViCommandProcessor(editor);
+        var commands = new ViCommandProcessor(editor, options: new ViOptions());
 
         Assert.True(commands.IsMutatingCommand("pu a"));
         Assert.True(commands.IsMutatingCommand("20put a"));
+        Assert.True(commands.IsMutatingCommand("%s/o/O/g"));
+        Assert.True(commands.IsMutatingCommand("2d"));
+        Assert.False(commands.IsMutatingCommand("set ic"));
         Assert.False(commands.IsMutatingCommand("2y a"));
         Assert.False(commands.IsMutatingCommand("y3"));
         Assert.False(commands.IsMutatingCommand("2"));
