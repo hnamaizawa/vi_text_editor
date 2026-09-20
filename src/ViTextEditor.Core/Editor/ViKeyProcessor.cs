@@ -246,28 +246,19 @@ public sealed class ViKeyProcessor
 
     private void BeginInsertRepeat(string[] tokens, bool baseChanged)
     {
-        if (_isRepeating)
-        {
-            return;
-        }
+        if (_isRepeating) return;
         _pendingInsertRepeat = new PendingInsertRepeat(tokens, baseChanged);
     }
 
     private void RecordRepeat(string[] tokens)
     {
-        if (_isRepeating)
-        {
-            return;
-        }
+        if (_isRepeating) return;
         _lastRepeat = new RepeatState(tokens, []);
     }
 
     private void RepeatLastChange()
     {
-        if (_lastRepeat is null || _isRepeating)
-        {
-            return;
-        }
+        if (_lastRepeat is null || _isRepeating) return;
 
         var repeat = _lastRepeat;
         _isRepeating = true;
@@ -275,10 +266,7 @@ public sealed class ViKeyProcessor
         _pendingInsertRepeat = null;
         try
         {
-            foreach (var token in repeat.Tokens)
-            {
-                Handle(token);
-            }
+            foreach (var token in repeat.Tokens) Handle(token);
 
             if (Mode == EditorMode.Insert)
             {
@@ -313,10 +301,7 @@ public sealed class ViKeyProcessor
 
     private void SetMode(EditorMode mode)
     {
-        if (Mode == mode)
-        {
-            return;
-        }
+        if (Mode == mode) return;
         Mode = mode;
         ModeChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -340,10 +325,7 @@ public sealed class ViKeyProcessor
     {
         var length = _editor.TextLength;
         var position = Math.Clamp(_editor.CaretPosition, 0, length);
-        if (position < length && _editor.CharAt(position) is not ('\n' or '\r'))
-        {
-            position++;
-        }
+        if (position < length && _editor.CharAt(position) is not ('\n' or '\r')) position++;
         _editor.MoveCaret(position);
     }
 
@@ -497,25 +479,28 @@ public sealed class ViKeyProcessor
             var wordClass = ClassifySmallWord(_editor.CharAt(start));
             while (end < length && ClassifySmallWord(_editor.CharAt(end)) == wordClass) end++;
         }
-        return DeleteIntoRegister(start, end);
+        var changed = DeleteIntoRegister(start, end);
+        if (changed) _editor.MoveCaret(Math.Min(start, _editor.TextLength));
+        return changed;
     }
 
     private bool ChangeToLineEnd()
     {
         if (_editor.TextLength == 0) return false;
         var start = Math.Clamp(_editor.CaretPosition, 0, _editor.TextLength - 1);
-        return DeleteIntoRegister(start, _editor.LineEndExclusive(start));
+        var changed = DeleteIntoRegister(start, _editor.LineEndExclusive(start));
+        if (changed) _editor.MoveCaret(Math.Min(start, _editor.TextLength));
+        return changed;
     }
 
     private bool DeleteWordMotion(bool bigWord)
     {
         if (_editor.TextLength == 0) return false;
         var start = Math.Clamp(_editor.CaretPosition, 0, _editor.TextLength - 1);
+        var lineEnd = _editor.LineEndExclusive(start);
         var end = FindNextWordStart(start, bigWord);
-        if (end <= start)
-        {
-            end = Math.Min(_editor.TextLength, start + 1);
-        }
+        if (end > lineEnd) end = lineEnd;
+        if (end <= start) end = Math.Min(_editor.TextLength, start + 1);
         return DeleteIntoRegister(start, end);
     }
 
