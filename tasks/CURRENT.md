@@ -1,40 +1,32 @@
-# CURRENT - v0.1.15
+# CURRENT - v0.1.16
 
 ## 目的
 
-v0.1.14で右下のX/Y座標がStatusStripのoverflowへ隠れる問題を修正し、ファイル拡張子に応じた読みやすいシンタックス強調を追加する。
+v0.1.15でも一部環境で右下のX/Y座標が見えない問題を解消する。ToolStrip/StatusStripのoverflowレイアウトに依存しない専用表示へ変更し、座標を確実に右下へ表示する。
 
-## v0.1.15 スコープ
+## v0.1.16 スコープ
 
-- [x] StatusStripのSpring領域を専用spacerへ分離
-- [x] 右端へ1始まりの `X=桁  Y=行` を固定幅で常時表示
-- [x] カーソル移動・マウス操作・vi操作後も座標更新
-- [x] `.md/.markdown` をMarkdownとして強調
-- [x] Markdownの `#`〜`######` 見出しを太字＋サイズ差で強調
-- [x] Markdownのリスト、リンク、コード、引用も視認性を改善
-- [x] `.json/.jsonl` をJSONとして強調
-- [x] `.xml/.xaml/.svg` をXMLとして強調
-- [x] `.cs/.csx` をC#として強調
-- [x] `.py/.pyw` をPythonとして強調
-- [x] `.js/.jsx/.mjs/.cjs` をJavaScriptとして強調
-- [x] `.ts/.tsx` をTypeScriptとして強調
-- [x] `.yaml/.yml` をYAMLとして強調
-- [x] Save Asなどで拡張子が変わった場合も強調を再適用
-- [x] シンタックス強調は表示だけを変更し、文書内容・Undo履歴を変更しない
-- [x] v0.1.14までのタブ、Large File、JSON整形、Markdownプレビュー、vi/Ex操作を維持
-- [x] ハーネスをv0.1.15へ更新
+- [x] 既存のToolStripStatusLabelによる座標表示をワークスペースでは非表示化
+- [x] StatusStrip右端に通常のWinForms `Label` を重ねる専用座標表示へ変更
+- [x] StatusStrip右端に座標用190pxを予約し、encoding/EOL表示との重なりを防止
+- [x] `X=桁  Y=行` を1始まりで表示
+- [x] カーソル移動・マウス操作・vi操作・リサイズ後に座標を更新
+- [x] タブ埋め込み時のToolStrip overflowに座標表示を依存させない
+- [x] バイナリ表示時は従来のpositionステータス文字列を専用表示へ転記
+- [x] v0.1.15のシンタックス強調、タブ、Large File、JSON整形、Markdownプレビュー、vi/Ex操作を維持
+- [x] ハーネスをv0.1.16へ更新
 
 ## 実装方針
 
-Scintilla5.NET 7.0.0 / Lexillaの `LexerName` を拡張子から選択し、スタイルを設定する。Markdownでは見出しを特に強く表示する。C# / JavaScript / TypeScriptはScintilla5.NETが対応づけるLexilla `cpp` lexerを使い、言語別キーワードセットを設定する。
+WinFormsのStatusStrip内部アイテムは、埋め込みフォームの幅やToolStripレイアウト計算によってoverflowへ送られる場合がある。v0.1.16では座標をToolStripItemとして扱わず、StatusStripの右端領域に通常のLabelコントロールを重ねる。これによりToolStripのoverflow判定から完全に分離する。
 
 ## 次候補
 
-1. ユーザーが配色テーマを選べる機能
-2. シンタックス強調ON/OFFと拡張子ごとの手動言語指定
-3. タブの前回セッション復元、タブのドラッグ並べ替え、ピン留め
-4. Markdownライブプレビュー（編集と同期）
-5. JSONツリー表示 / JSONPath検索
-6. Large Fileモードのバックグラウンド索引作成と進捗表示
-7. 数値プレフィックス (`3yy`, `3w`, `5j`, `2dw` など)
-8. Visualモード
+1. UI自動テストを追加し、座標ラベルのVisible/BoundsをWindows CIで検証
+2. ユーザーが配色テーマを選べる機能
+3. シンタックス強調ON/OFFと拡張子ごとの手動言語指定
+4. タブの前回セッション復元、タブのドラッグ並べ替え、ピン留め
+5. Markdownライブプレビュー（編集と同期）
+6. JSONツリー表示 / JSONPath検索
+7. Large Fileモードのバックグラウンド索引作成と進捗表示
+8. 数値プレフィックス (`3yy`, `3w`, `5j`, `2dw` など)
