@@ -27,6 +27,7 @@ internal sealed class LargeTextViewerControl : UserControl
     private bool _pendingG;
     private string? _lastSearch;
     private bool _lastSearchForward = true;
+    private bool _lastSearchIgnoreCase;
     private long? _lastMatchOffset;
     private char _commandPrefix;
 
@@ -164,7 +165,6 @@ internal sealed class LargeTextViewerControl : UserControl
             _preambleLength = 2;
             return;
         }
-
         try
         {
             _ = new UTF8Encoding(false, true).GetString(sample);
@@ -192,13 +192,11 @@ internal sealed class LargeTextViewerControl : UserControl
         long line = 0;
         byte previous = 0;
         var hasPrevious = false;
-
         while (offset < _length)
         {
             var requested = (int)Math.Min(buffer.Length, _length - offset);
             var read = RandomAccess.Read(_stream.SafeFileHandle, buffer.AsSpan(0, requested), offset);
             if (read <= 0) break;
-
             for (var i = 0; i < read; i++)
             {
                 var absolute = offset + i;
@@ -206,9 +204,7 @@ internal sealed class LargeTextViewerControl : UserControl
                 if (IsLineFeed(previous, b, hasPrevious, absolute))
                 {
                     line++;
-                    var nextOffset = absolute + 1;
-                    if (IsUtf16Encoding()) nextOffset = absolute + 1;
-                    if (line % IndexStrideLines == 0) _checkpoints.Add(new Checkpoint(line, nextOffset));
+                    if (line % IndexStrideLines == 0) _checkpoints.Add(new Checkpoint(line, absolute + 1));
                 }
                 previous = b;
                 hasPrevious = true;
@@ -220,14 +216,10 @@ internal sealed class LargeTextViewerControl : UserControl
 
     private bool IsLineFeed(byte previous, byte current, bool hasPrevious, long absoluteOffset)
     {
-        if (_encoding.CodePage == Encoding.Unicode.CodePage)
-        {
+        if (_encoding.CodePage == 1200)
             return hasPrevious && previous == 0x0A && current == 0x00 && ((absoluteOffset - _preambleLength) & 1) == 1;
-        }
-        if (_encoding.CodePage == Encoding.BigEndianUnicode.CodePage)
-        {
+        if (_encoding.CodePage == 1201)
             return hasPrevious && previous == 0x00 && current == 0x0A && ((absoluteOffset - _preambleLength) & 1) == 1;
-        }
         return current == 0x0A;
     }
 
@@ -248,7 +240,6 @@ internal sealed class LargeTextViewerControl : UserControl
     {
         if (_lineCache.TryGetValue(zeroBasedLine, out var cached)) return cached;
         if (_stream is null) return string.Empty;
-
         var start = FindLineStart(zeroBasedLine);
         var bytes = ReadLineBytes(start, out var truncated);
         var text = DecodeLine(bytes);
@@ -265,8 +256,7 @@ internal sealed class LargeTextViewerControl : UserControl
         while (checkpointIndex > 0 && _checkpoints[checkpointIndex].Line > zeroBasedLine) checkpointIndex--;
         var checkpoint = _checkpoints[checkpointIndex];
         var remaining = zeroBasedLine - checkpoint.Line;
-        if (remaining <= 0) return checkpoint.Offset;
-        return ScanForwardLines(checkpoint.Offset, remaining);
+        return remaining <= 0 ? checkpoint.Offset : ScanForwardLines(checkpoint.Offset, remaining);
     }
 
     private long ScanForwardLines(long startOffset, long lines)
@@ -308,20 +298,18 @@ internal sealed class LargeTextViewerControl : UserControl
         var offset = start;
         byte previous = 0;
         var hasPrevious = false;
-
         while (offset < _length && output.Length < MaxDisplayLineBytes)
         {
             var requested = (int)Math.Min(buffer.Length, Math.Min(_length - offset, MaxDisplayLineBytes - output.Length));
             var read = RandomAccess.Read(_stream.SafeFileHandle, buffer.AsSpan(0, requested), offset);
             if (read <= 0) break;
-            var stop = read;
             for (var i = 0; i < read; i++)
             {
                 var absolute = offset + i;
                 var b = buffer[i];
                 if (IsLineFeed(previous, b, hasPrevious, absolute))
                 {
-                    stop = IsUtf16Encoding() ? Math.Max(0, i - 1) : i;
+                    var stop = IsUtf16Encoding() ? Math.Max(0, i - 1) : i;
                     output.Write(buffer, 0, stop);
                     return TrimCarriageReturn(output.ToArray());
                 }
@@ -366,7 +354,8 @@ internal sealed class LargeTextViewerControl : UserControl
             if (e.Shift) { _pendingG = false; MoveToLine(_grid.RowCount - 1); }
             else if (_pendingG) { _pendingG = false; MoveToLine(0); }
             else _pendingG = true;
-            Consume(e); return;
+            Consume(e);
+            return;
         }
         _pendingG = false;
         if (e.KeyCode == Keys.J) { MoveLines(1); Consume(e); return; }
@@ -378,7 +367,11 @@ internal sealed class LargeTextViewerControl : UserControl
 
     private void GridOnKeyPress(object? sender, KeyPressEventArgs e)
     {
-        if (e.KeyChar is '/' or '?' or ':') { BeginCommand(e.KeyChar); e.Handled = true; }
+        if (e.KeyChar is '/' or '?' or ':')
+        {
+            BeginCommand(e.KeyChar);
+            e.Handled = true;
+        }
     }
 
     private void BeginCommand(char prefix)
@@ -400,7 +393,10 @@ internal sealed class LargeTextViewerControl : UserControl
         {
             if (_options.TryExecuteSet(value, out var message)) _status.Text = message ?? string.Empty;
         }
-        else if (!string.IsNullOrEmpty(value)) Search(value, _commandPrefix == '/');
+        else if (!string.IsNullOrEmpty(value))
+        {
+            Search(value, _commandPrefix == '/');
+        }
         EndCommand();
         Consume(e);
     }
@@ -420,13 +416,11 @@ internal sealed class LargeTextViewerControl : UserControl
         query = query.Replace("\\c", string.Empty, StringComparison.Ordinal).Replace("\\C", string.Empty, StringComparison.Ordinal);
         if (query.Length == 0) return false;
         var ignoreCase = forceCase ? false : forceIgnore || _options.IgnoreCase;
-        var pattern = _encoding.GetBytes(query);
-        var origin = CurrentOffset;
-        var found = forward ? FindForward(pattern, origin + 1, ignoreCase) : FindBackward(pattern, origin - 1, ignoreCase);
-        if (found is null) found = forward ? FindForward(pattern, _preambleLength, ignoreCase) : FindBackward(pattern, _length - pattern.Length, ignoreCase);
+        var found = FindSearchMatch(query, forward, ignoreCase);
         if (found is null) return false;
         _lastSearch = query;
         _lastSearchForward = forward;
+        _lastSearchIgnoreCase = ignoreCase;
         _lastMatchOffset = found.Value;
         MoveToOffset(found.Value);
         return true;
@@ -435,7 +429,22 @@ internal sealed class LargeTextViewerControl : UserControl
     private void RepeatSearch(bool reverse)
     {
         if (_lastSearch is null) return;
-        Search(_lastSearch, reverse ? !_lastSearchForward : _lastSearchForward);
+        var direction = reverse ? !_lastSearchForward : _lastSearchForward;
+        var found = FindSearchMatch(_lastSearch, direction, _lastSearchIgnoreCase);
+        if (found is null) return;
+        _lastMatchOffset = found.Value;
+        MoveToOffset(found.Value);
+    }
+
+    private long? FindSearchMatch(string query, bool forward, bool ignoreCase)
+    {
+        var pattern = _encoding.GetBytes(query);
+        if (pattern.Length == 0) return null;
+        var origin = _lastMatchOffset ?? CurrentOffset;
+        var found = forward ? FindForward(pattern, origin + 1, ignoreCase) : FindBackward(pattern, origin - 1, ignoreCase);
+        if (found is null)
+            found = forward ? FindForward(pattern, _preambleLength, ignoreCase) : FindBackward(pattern, _length - pattern.Length, ignoreCase);
+        return found;
     }
 
     private long? FindForward(byte[] pattern, long start, bool ignoreCase)
@@ -450,7 +459,8 @@ internal sealed class LargeTextViewerControl : UserControl
             var read = RandomAccess.Read(_stream.SafeFileHandle, buffer, cursor);
             if (read < pattern.Length) return null;
             var max = read - pattern.Length;
-            for (var i = 0; i <= max; i++) if (BytesEqual(buffer.AsSpan(i, pattern.Length), pattern, ignoreCase)) return cursor + i;
+            for (var i = 0; i <= max; i++)
+                if (BytesEqual(buffer.AsSpan(i, pattern.Length), pattern, ignoreCase)) return cursor + i;
             cursor += Math.Max(1, read - pattern.Length + 1);
         }
         return null;
@@ -469,7 +479,8 @@ internal sealed class LargeTextViewerControl : UserControl
             var requested = (int)Math.Min(buffer.Length, _length - chunkStart);
             var read = RandomAccess.Read(_stream.SafeFileHandle, buffer.AsSpan(0, requested), chunkStart);
             var max = Math.Min((int)(cursor - chunkStart), read - pattern.Length);
-            for (var i = max; i >= 0; i--) if (BytesEqual(buffer.AsSpan(i, pattern.Length), pattern, ignoreCase)) return chunkStart + i;
+            for (var i = max; i >= 0; i--)
+                if (BytesEqual(buffer.AsSpan(i, pattern.Length), pattern, ignoreCase)) return chunkStart + i;
             if (chunkStart == _preambleLength) break;
             cursor = chunkStart - 1;
         }
@@ -480,7 +491,8 @@ internal sealed class LargeTextViewerControl : UserControl
     {
         for (var i = 0; i < left.Length; i++)
         {
-            var a = left[i]; var b = right[i];
+            var a = left[i];
+            var b = right[i];
             if (ignoreCase)
             {
                 if (a is >= (byte)'A' and <= (byte)'Z') a = (byte)(a + 32);
@@ -520,7 +532,8 @@ internal sealed class LargeTextViewerControl : UserControl
                 var absolute = offset + i;
                 var b = buffer[i];
                 if (IsLineFeed(previous, b, hasPrevious, absolute)) count++;
-                previous = b; hasPrevious = true;
+                previous = b;
+                hasPrevious = true;
             }
             offset += read;
         }
@@ -557,7 +570,11 @@ internal sealed class LargeTextViewerControl : UserControl
         _status.Text = $"X 1, Y {y:N0}   |   {_encoding.WebName}   |   {(_options.IgnoreCase ? "ignorecase" : "case-sensitive")}   |   offset 0x{CurrentOffset:X}";
     }
 
-    private static void Consume(KeyEventArgs e) { e.Handled = true; e.SuppressKeyPress = true; }
+    private static void Consume(KeyEventArgs e)
+    {
+        e.Handled = true;
+        e.SuppressKeyPress = true;
+    }
 
     private static string SelectJapaneseMonospacedFont()
     {
@@ -568,6 +585,7 @@ internal sealed class LargeTextViewerControl : UserControl
     }
 
     private readonly record struct Checkpoint(long Line, long Offset);
+
     private sealed class CheckpointOffsetComparer : IComparer<Checkpoint>
     {
         public static CheckpointOffsetComparer Instance { get; } = new();
