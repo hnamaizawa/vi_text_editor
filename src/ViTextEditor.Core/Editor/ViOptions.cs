@@ -50,7 +50,7 @@ public sealed class ViOptions
                 case "ic!":
                 case "ignorecase!":
                 case "invic":
-                case "invinorecase":
+                case "invignorecase":
                     IgnoreCase = !IgnoreCase;
                     message = IgnoreCase ? "ignorecase" : "noignorecase";
                     break;
