@@ -45,7 +45,8 @@ public sealed class MainForm : Form
         _editor.Margins[0].Type = MarginType.Number;
         _editor.Margins[0].Width = 48;
         _editor.KeyDown += EditorOnKeyDown;
-        _editor.KeyUp += (_, _) => UpdateStatus();
+        _editor.KeyPress += EditorOnKeyPress;
+        _editor.UpdateUI += (_, _) => UpdateStatus();
         _editor.MouseUp += (_, _) => UpdateStatus();
         _editor.TextChanged += EditorOnTextChanged;
 
@@ -151,7 +152,7 @@ public sealed class MainForm : Form
 
         var help = new ToolStripMenuItem("ヘルプ(&H)");
         help.DropDownItems.Add(new ToolStripMenuItem("viキーバインド", null, (_, _) => ShowKeyBindings()));
-        help.DropDownItems.Add(new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show(this, "vi_text_editor v0.1.5", "バージョン情報", MessageBoxButtons.OK, MessageBoxIcon.Information)));
+        help.DropDownItems.Add(new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show(this, "vi_text_editor v0.1.6", "バージョン情報", MessageBoxButtons.OK, MessageBoxIcon.Information)));
 
         menu.Items.AddRange([file, edit, mode, help]);
         return menu;
@@ -220,7 +221,6 @@ public sealed class MainForm : Form
             _editor.ScrollCaret();
             e.Handled = true;
             e.SuppressKeyPress = true;
-            UpdateStatus();
             return;
         }
 
@@ -228,7 +228,6 @@ public sealed class MainForm : Form
         {
             e.Handled = true;
             e.SuppressKeyPress = true;
-            UpdateStatus();
             return;
         }
 
@@ -236,7 +235,43 @@ public sealed class MainForm : Form
         {
             e.Handled = true;
             e.SuppressKeyPress = true;
-            UpdateStatus();
+        }
+    }
+
+    private void EditorOnKeyPress(object? sender, KeyPressEventArgs e)
+    {
+        if (_vi.Mode != EditorMode.Normal || _commandLine.Visible)
+        {
+            return;
+        }
+
+        var token = e.KeyChar switch
+        {
+            '^' => "^",
+            ':' => ":",
+            '/' => "/",
+            '?' => "?",
+            _ => null
+        };
+
+        if (token is ":" or "/" or "?")
+        {
+            BeginCommandInput(token[0]);
+            e.Handled = true;
+            return;
+        }
+
+        if (token == "^")
+        {
+            _vi.Handle(token);
+            e.Handled = true;
+            return;
+        }
+
+        // NORMALモードでは未対応の印字文字を本文へ挿入しない。
+        if (!char.IsControl(e.KeyChar))
+        {
+            e.Handled = true;
         }
     }
 
@@ -277,6 +312,7 @@ public sealed class MainForm : Form
         _commandLine.BringToFront();
         _commandLine.Focus();
         _commandLine.SelectionStart = _commandLine.TextLength;
+        UpdateStatus();
     }
 
     private void CommandLineOnKeyDown(object? sender, KeyEventArgs e)
@@ -302,16 +338,19 @@ public sealed class MainForm : Form
         }
 
         var value = _commandLine.Text.Length > 1 ? _commandLine.Text[1..] : string.Empty;
-        var moved = _commandPrefix switch
-        {
-            ':' => _commands.Execute(value),
-            '/' => _search.Search(value, forward: true),
-            '?' => _search.Search(value, forward: false),
-            _ => false
-        };
+        var blockedMutation = _commandPrefix == ':' && _referenceMode && _commands.IsMutatingCommand(value);
+        var acted = blockedMutation
+            ? false
+            : _commandPrefix switch
+            {
+                ':' => _commands.Execute(value),
+                '/' => _search.Search(value, forward: true),
+                '?' => _search.Search(value, forward: false),
+                _ => false
+            };
 
         EndCommandInput();
-        if (moved)
+        if (acted)
         {
             _editor.ScrollCaret();
         }
@@ -325,6 +364,7 @@ public sealed class MainForm : Form
         _commandLine.Visible = false;
         _commandLine.Text = string.Empty;
         _editor.Focus();
+        UpdateStatus();
     }
 
     private void EditorOnTextChanged(object? sender, EventArgs e)
@@ -442,16 +482,16 @@ public sealed class MainForm : Form
 
     private void UpdateStatus()
     {
-        _modeLabel.Text = _vi is null || _vi.Mode == EditorMode.Normal ? "NORMAL" : "INSERT";
+        _modeLabel.Text = _commandLine.Visible
+            ? "COMMAND"
+            : _vi is null || _vi.Mode == EditorMode.Normal ? "NORMAL" : "INSERT";
         _accessLabel.Text = _referenceMode ? "参照" : "編集";
         _encodingLabel.Text = _encoding.WebName;
         _eolLabel.Text = _newLine switch { "\r\n" => "CRLF", "\n" => "LF", "\r" => "CR", _ => "EOL" };
-        var text = _editor.Text;
-        var position = Math.Clamp(_editor.CurrentPosition, 0, text.Length);
-        var before = position == 0 ? string.Empty : text[..Math.Min(position, text.Length)];
-        var line = before.Count(c => c == '\n') + 1;
-        var lastBreak = before.LastIndexOf('\n');
-        var column = position - (lastBreak + 1) + 1;
+
+        var position = Math.Clamp(_editor.CurrentPosition, 0, _editor.TextLength);
+        var line = _editor.LineFromPosition(position) + 1;
+        var column = _editor.GetColumn(position) + 1;
         _positionLabel.Text = $"Ln {line}, Col {column}";
     }
 
@@ -459,10 +499,10 @@ public sealed class MainForm : Form
     {
         MessageBox.Show(this,
             "参照モードは既定でONです。モード > 参照モード で編集可能に切り替えられます。\n\n" +
-            "NORMAL: h j k l / w b（word）/ W B（WORD）/ Ctrl+F Ctrl+B（1画面）/ Ctrl+D Ctrl+U（半画面）\n" +
+            "NORMAL: h j k l / 0 ^ $ / w b（word）/ W B（WORD）/ Ctrl+F Ctrl+B（1画面）/ Ctrl+D Ctrl+U（半画面）\n" +
             "検索: /文字列 / ?文字列 / n（同方向）/ N（逆方向）\n" +
-            "ジャンプ: :行番号（例 :120）/ :$（最終行）\n" +
-            "その他: e / 0 ^ $ / gg G / x / dd / yy / p P / u / Ctrl+R\n" +
+            "COMMAND: :120（120行目）/ :$（最終行）/ :5y a / :5,10y a / :pu a / :20pu a\n" +
+            "その他: e / gg G / x / dd / yy / p P / u / Ctrl+R\n" +
             "INSERT: i / a / o / O、EscでNORMALへ戻る",
             "viキーバインド", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
