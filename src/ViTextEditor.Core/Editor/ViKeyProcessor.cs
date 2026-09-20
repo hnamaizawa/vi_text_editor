@@ -13,6 +13,7 @@ public sealed class ViKeyProcessor
     }
 
     public EditorMode Mode { get; private set; } = EditorMode.Normal;
+    public bool HasPendingCommand => _pending is not null;
 
     public event EventHandler? ModeChanged;
 
