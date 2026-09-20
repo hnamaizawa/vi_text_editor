@@ -14,6 +14,24 @@ public sealed class V013WorkspaceFeatureTests
     }
 
     [Fact]
+    public void NormalTextLoaderRefusesLargeFileBeforeReadAllBytes()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"vi_text_editor_large_{Guid.NewGuid():N}.txt");
+        try
+        {
+            using (var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                stream.SetLength(LargeFilePolicy.DefaultThresholdBytes);
+
+            var ex = Assert.Throws<IOException>(() => TextFileService.Load(path));
+            Assert.Contains("Large File", ex.Message, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void RecentFileListMovesDuplicatesToFrontAndCapsCapacity()
     {
         var recent = new RecentFileList(3);
