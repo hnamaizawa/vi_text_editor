@@ -1,6 +1,6 @@
 project:
   name: vi_text_editor
-  version: 0.1.13
+  version: 0.1.15
   platform: windows
   ui: winforms
   editor_component: Scintilla5.NET
@@ -69,6 +69,10 @@ non_negotiable_invariants:
   - large_file_mode_must_support_j_k_ctrl_f_ctrl_b_ctrl_d_ctrl_u_gg_G_and_search
   - large_file_mode_must_honor_set_ic_for_text_search
   - status_bar_must_show_one_based_X_and_Y_coordinates
+  - status_bar_must_keep_X_and_Y_coordinates_visible_at_the_right_edge
+  - syntax_highlighting_must_follow_the_current_file_extension
+  - markdown_headings_must_be_visually_emphasized
+  - syntax_highlighting_must_not_modify_document_text
   - json_formatting_must_be_undoable_and_refuse_reference_mode
   - json_formatting_must_preserve_the_active_document_newline_style
   - markdown_preview_must_render_in_a_separate_tab_without_modifying_source_text
