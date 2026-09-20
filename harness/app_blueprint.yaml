@@ -1,6 +1,6 @@
 project:
   name: vi_text_editor
-  version: 0.1.9
+  version: 0.1.10
   platform: windows
   ui: winforms
   editor_component: Scintilla5.NET
@@ -35,6 +35,8 @@ non_negotiable_invariants:
   - colon_command_mode_must_be_visible_and_escape_cancelable
   - colon_numeric_command_must_jump_to_requested_line
   - colon_yank_must_support_single_lines_ranges_and_named_registers
+  - colon_yank_count_must_support_y3_y_space_3_and_named_register_count
+  - colon_yank_count_must_start_at_current_line_and_clamp_at_end_of_file
   - colon_put_must_support_named_registers_and_target_lines
   - uppercase_named_register_yank_must_append_to_lowercase_register
   - colon_edit_bang_must_reload_current_file_and_discard_buffer_changes
@@ -48,7 +50,10 @@ non_negotiable_invariants:
   - scintilla_layout_cache_must_cover_visible_page
   - scintilla_extra_buffered_draw_must_be_disabled_on_windows
   - binary_mode_must_be_read_only_and_virtualized
-  - binary_mode_must_show_offset_hex_and_ascii_columns
+  - binary_mode_must_show_offset_hex_and_text_columns
+  - binary_text_column_must_support_utf8_shift_jis_utf16_and_ascii_selection
+  - binary_text_column_must_render_japanese_with_a_japanese_capable_monospaced_font
+  - binary_text_auto_detection_must_prefer_bom_then_valid_utf8_then_shift_jis
   - binary_mode_must_not_materialize_the_entire_file_as_hex_text
   - binary_file_must_be_openable_directly_without_text_decode
   - direct_binary_view_must_preserve_the_existing_text_buffer

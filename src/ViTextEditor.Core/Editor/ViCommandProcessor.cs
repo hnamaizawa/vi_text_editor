@@ -8,6 +8,14 @@ public sealed class ViCommandProcessor
         @"^(?<range>%|(?:[.$]|\d+)(?:\s*,\s*(?:[.$]|\d+))?)?\s*(?<command>y(?:a(?:n(?:k)?)?)?|pu(?:t)?)?\s*(?<register>[A-Za-z])?\s*$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
+    private static readonly Regex CompactYankCountPattern = new(
+        @"^y(?<count>\d+)$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
+    private static readonly Regex YankCountPattern = new(
+        @"^(?<command>y(?:a(?:n(?:k)?)?)?)\s+(?:(?<register>[A-Za-z])\s+)?(?<count>\d+)\s*$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
     private readonly IEditorAdapter _editor;
     private readonly ViRegisterStore _registers;
 
@@ -23,6 +31,11 @@ public sealed class ViCommandProcessor
         if (trimmed.Length == 0)
         {
             return false;
+        }
+
+        if (TryExecuteYankCount(trimmed, out var yankCountResult))
+        {
+            return yankCountResult;
         }
 
         var match = CommandPattern.Match(trimmed);
@@ -86,6 +99,42 @@ public sealed class ViCommandProcessor
     {
         var match = CommandPattern.Match(command.Trim());
         return match.Success && IsPutCommand(match.Groups["command"].Value);
+    }
+
+    private bool TryExecuteYankCount(string command, out bool result)
+    {
+        result = false;
+        Match match;
+        char? register = null;
+
+        var compact = CompactYankCountPattern.Match(command);
+        if (compact.Success)
+        {
+            match = compact;
+        }
+        else
+        {
+            match = YankCountPattern.Match(command);
+            if (!match.Success)
+            {
+                return false;
+            }
+
+            var registerText = match.Groups["register"].Value;
+            register = registerText.Length == 1 ? registerText[0] : (char?)null;
+        }
+
+        if (!int.TryParse(match.Groups["count"].Value, out var count) || count < 1)
+        {
+            result = false;
+            return true;
+        }
+
+        var startLine = CurrentLineNumber();
+        var lineCount = CountLines(_editor.Text);
+        var endLine = Math.Min(lineCount, startLine + count - 1);
+        result = YankLines(startLine, endLine, register);
+        return true;
     }
 
     private bool YankLines(int startLine, int endLine, char? register)
