@@ -66,6 +66,47 @@ public sealed class ViCommandProcessorTests
     }
 
     [Fact]
+    public void CompactYankCountYanksFromCurrentLine()
+    {
+        var editor = new FakeEditor("one\ntwo\nthree\nfour\nfive", 4);
+        var registers = new ViRegisterStore();
+        var commands = new ViCommandProcessor(editor, registers);
+
+        Assert.True(commands.Execute("y3"));
+        Assert.True(registers.TryGet(null, out var lines));
+        Assert.Equal(new[] { "two", "three", "four" }, lines);
+    }
+
+    [Fact]
+    public void YankCountAlsoAcceptsVimStyleSpacingAndNamedRegister()
+    {
+        foreach (var command in new[] { "y 3", "yank 3", "y a 3" })
+        {
+            var editor = new FakeEditor("one\ntwo\nthree\nfour", 4);
+            var registers = new ViRegisterStore();
+            var commands = new ViCommandProcessor(editor, registers);
+
+            Assert.True(commands.Execute(command));
+            var register = command == "y a 3" ? 'a' : (char?)null;
+            Assert.True(registers.TryGet(register, out var lines));
+            Assert.Equal(new[] { "two", "three", "four" }, lines);
+        }
+    }
+
+    [Fact]
+    public void YankCountClampsAtEndOfFileAndRejectsZero()
+    {
+        var editor = new FakeEditor("one\ntwo\nthree", 4);
+        var registers = new ViRegisterStore();
+        var commands = new ViCommandProcessor(editor, registers);
+
+        Assert.True(commands.Execute("y9"));
+        Assert.True(registers.TryGet(null, out var lines));
+        Assert.Equal(new[] { "two", "three" }, lines);
+        Assert.False(commands.Execute("y0"));
+    }
+
+    [Fact]
     public void PutCanTargetSpecificLineOrZero()
     {
         var editor = new FakeEditor("one\ntwo\nthree", 0);
@@ -102,6 +143,7 @@ public sealed class ViCommandProcessorTests
         Assert.True(commands.IsMutatingCommand("pu a"));
         Assert.True(commands.IsMutatingCommand("20put a"));
         Assert.False(commands.IsMutatingCommand("2y a"));
+        Assert.False(commands.IsMutatingCommand("y3"));
         Assert.False(commands.IsMutatingCommand("2"));
     }
 
