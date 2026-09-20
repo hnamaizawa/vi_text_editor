@@ -41,8 +41,14 @@ internal sealed class ScintillaEditorAdapter : IEditorAdapter
         {
             return 0;
         }
+
         var line = _editor.LineFromPosition(Math.Clamp(position, 0, _editor.TextLength));
-        return _editor.Lines[Math.Clamp(line, 0, _editor.Lines.Count - 1)].EndPosition;
+        var item = _editor.Lines[Math.Clamp(line, 0, _editor.Lines.Count - 1)];
+        var end = item.EndPosition;
+        // Line.EndPosition includes CR/LF because Line.Length includes EOL characters.
+        if (end > item.Position && CharAt(end - 1) == '\n') end--;
+        if (end > item.Position && CharAt(end - 1) == '\r') end--;
+        return end;
     }
 
     public string GetTextRange(int position, int length)
@@ -73,37 +79,27 @@ internal sealed class ScintillaEditorAdapter : IEditorAdapter
 
     public void ScrollPage(int direction)
     {
-        if (direction == 0)
-        {
-            return;
-        }
-
+        if (direction == 0) return;
         ScrollByVisibleLines(Math.Sign(direction) * Math.Max(1, _editor.LinesOnScreen - 2));
     }
 
     public void ScrollHalfPage(int direction)
     {
-        if (direction == 0)
-        {
-            return;
-        }
-
+        if (direction == 0) return;
         ScrollByVisibleLines(Math.Sign(direction) * Math.Max(1, _editor.LinesOnScreen / 2));
     }
 
     private void ScrollByVisibleLines(int deltaLines)
     {
-        if (_editor.Lines.Count == 0 || deltaLines == 0)
-        {
-            return;
-        }
+        if (_editor.Lines.Count == 0 || deltaLines == 0) return;
 
         var currentLine = Math.Clamp(_editor.CurrentLine, 0, _editor.Lines.Count - 1);
         var currentLineStart = _editor.Lines[currentLine].Position;
         var column = Math.Max(0, _editor.CurrentPosition - currentLineStart);
         var targetLine = Math.Clamp(currentLine + deltaLines, 0, _editor.Lines.Count - 1);
         var target = _editor.Lines[targetLine];
-        var maxTargetPosition = Math.Max(target.Position, target.EndPosition - 1);
+        var targetEnd = LineEndExclusive(target.Position);
+        var maxTargetPosition = Math.Max(target.Position, targetEnd > target.Position ? targetEnd - 1 : target.Position);
         var targetPosition = Math.Min(target.Position + column, maxTargetPosition);
 
         var targetFirstVisibleLine = Math.Clamp(
