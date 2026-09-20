@@ -1,33 +1,32 @@
-# CURRENT - v0.1.8
+# CURRENT - v0.1.9
 
 ## 目的
 
-EmEditor／サクラエディタに近いWindows GUIを維持しつつ、viのdelete operator + motionとExファイルコマンドを実用化する。
+Vimの `.` による直前変更の繰り返し、Scintilla表示性能の改善、巨大ファイルにも耐えやすい仮想化バイナリビューアを追加する。
 
-## v0.1.8 スコープ
+## v0.1.9 スコープ
 
-- [x] `dw` でword motion単位の削除
-- [x] `dW` でWORD motion単位の削除
-- [x] `de` / `dE` でword / WORD末尾まで削除
-- [x] `d$` / `D` で行末まで削除
-- [x] deleteで削除した文字列を無名レジスタへ保持
-- [x] `:e!` で未保存変更を破棄して現在ファイルを再読込
-- [x] `:e#` / `:e #` でalternate fileを開く
-- [x] `:q!` で未保存変更を無視して強制終了
-- [x] `:w` で現在ファイルへ保存
-- [x] `:w ファイル名` をユーザー要件どおり別名保存として実装
-- [x] GUIファイル切替・別名保存時にalternate fileを更新
-- [x] ExファイルコマンドのCoreパーサーと単体テストを追加
-- [x] 既存のchange、Undo/save point、参照モード、IME、ファイルI/Oを維持
-- [x] マージ完了後にその版のWindows x64自己完結ZIPを提示する運用をハーネスへ追加
+- [x] `.` で直前の変更を繰り返す
+- [x] `p` / `P` のputを `.` で繰り返す
+- [x] `x`, `dd`, `dw`, `dW`, `de`, `dE`, `d$`, `D` を `.` で繰り返す
+- [x] `cw`, `cW`, `ce`, `cE`, `c$` とINSERT入力内容を `.` で繰り返す仕組みを追加
+- [x] INSERT中の挿入・削除イベントを相対位置で記録し、IME確定文字列やBackspaceを再現可能にする
+- [x] yankや移動だけでは `.` の対象を上書きしない
+- [x] viの通常移動・削除処理で全文 `Text` 取得を避け、Scintillaネイティブ位置APIを利用
+- [x] Win32でScintillaの追加BufferedDrawをOFF
+- [x] 表示ページのLayoutCacheを有効化
+- [x] バイナリモードを追加
+- [x] バイナリ表示は OFFSET / HEX / ASCII の3列構成
+- [x] バイナリ表示をDataGridView VirtualMode + RandomAccessで実装し、全ファイルのHEX文字列化を回避
+- [x] 既存のExファイル操作、Undo/save point、参照モード、IME、文字コード/改行維持を継続
 
 ## 次候補
 
-1. `yw` / `yW` / `ye` / `y$` のoperator + motion
-2. `cc` / `C` / `ciw` / `caw` などchange系拡張
-3. 数値プレフィックス (`3w`, `5j`, `2dw` など)
+1. 数値プレフィックス (`3yy`, `3w`, `5j`, `2dw` など)
+2. `yw` / `yW` / `ye` / `y$` のoperator + motion
+3. `cc` / `C` / `ciw` / `caw` などchange系拡張
 4. `"a yy` / `"a p` などNORMALモードの名前付きレジスタ
-5. `:e ファイル名` / `:saveas` / `:w!` などExファイル操作拡張
+5. バイナリモードの検索・位置ジャンプ・選択範囲コピー
 6. Vim互換に近い検索正規表現と検索ハイライト
 7. Visualモード
 8. タブ編集
