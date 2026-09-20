@@ -30,6 +30,7 @@ public sealed class MainForm : Form
 
     private string? _filePath;
     private string? _alternateFilePath;
+    private string? _binaryFilePath;
     private Encoding _encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
     private string _newLine = "\r\n";
     private bool _dirty;
@@ -103,8 +104,6 @@ public sealed class MainForm : Form
         _editor.StyleClearAll();
         _editor.CaretWidth = 3;
 
-        // Scintilla recommends disabling its own extra buffering on current Win32.
-        // Cache the visible page layout so scrolling and caret movement do not repeat layout work.
         _editor.BufferedDraw = false;
         _editor.DirectMessage(SciSetLayoutCache, new IntPtr(ScCachePage));
     }
@@ -144,6 +143,7 @@ public sealed class MainForm : Form
         var file = new ToolStripMenuItem("ファイル(&F)");
         file.DropDownItems.Add(new ToolStripMenuItem("新規(&N)", null, (_, _) => NewDocument(), Keys.Control | Keys.N));
         file.DropDownItems.Add(new ToolStripMenuItem("開く(&O)...", null, (_, _) => OpenDocument(), Keys.Control | Keys.O));
+        file.DropDownItems.Add(new ToolStripMenuItem("バイナリとして開く(&B)...", null, (_, _) => OpenBinaryDocument()));
         file.DropDownItems.Add(new ToolStripSeparator());
         file.DropDownItems.Add(new ToolStripMenuItem("保存(&S)", null, (_, _) => SaveDocument(), Keys.Control | Keys.S));
         file.DropDownItems.Add(new ToolStripMenuItem("名前を付けて保存(&A)...", null, (_, _) => SaveDocumentAs()));
@@ -209,38 +209,74 @@ public sealed class MainForm : Form
         {
             if (_filePath is null)
             {
-                MessageBox.Show(this, "バイナリ表示には保存済みファイルが必要です。", "vi_text_editor", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(this, "現在ファイルがありません。『ファイル > バイナリとして開く』から直接開くこともできます。", "vi_text_editor", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 SetBinaryMenuChecked(false);
                 return;
             }
 
-            if (!_binaryViewer.LoadFile(_filePath, out var error))
+            if (!EnterBinaryMode(_filePath))
             {
-                MessageBox.Show(this, error ?? "バイナリ表示を開始できません。", "vi_text_editor", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 SetBinaryMenuChecked(false);
                 return;
             }
-
-            _binaryMode = true;
-            _commandLine.Visible = false;
-            _editor.Visible = false;
-            _binaryViewer.Visible = true;
-            _binaryViewer.BringToFront();
-            _binaryViewer.Focus();
         }
         else
         {
-            _binaryMode = false;
-            _binaryViewer.Visible = false;
-            _binaryViewer.CloseFile();
-            _editor.Visible = true;
-            _editor.BringToFront();
-            _editor.Focus();
+            LeaveBinaryMode();
+        }
+    }
+
+    private bool EnterBinaryMode(string path)
+    {
+        if (!_binaryViewer.LoadFile(path, out var error))
+        {
+            MessageBox.Show(this, error ?? "バイナリ表示を開始できません。", "vi_text_editor", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return false;
         }
 
-        if (_undoMenuItem is not null) _undoMenuItem.Enabled = !_referenceMode && !_binaryMode;
-        if (_redoMenuItem is not null) _redoMenuItem.Enabled = !_referenceMode && !_binaryMode;
+        _binaryFilePath = Path.GetFullPath(path);
+        _binaryMode = true;
+        _commandLine.Visible = false;
+        _editor.Visible = false;
+        _binaryViewer.Visible = true;
+        _binaryViewer.BringToFront();
+        _binaryViewer.Focus();
+        if (_undoMenuItem is not null) _undoMenuItem.Enabled = false;
+        if (_redoMenuItem is not null) _redoMenuItem.Enabled = false;
+        UpdateTitle();
         UpdateStatus();
+        return true;
+    }
+
+    private void LeaveBinaryMode()
+    {
+        _binaryMode = false;
+        _binaryFilePath = null;
+        _binaryViewer.Visible = false;
+        _binaryViewer.CloseFile();
+        _editor.Visible = true;
+        _editor.BringToFront();
+        _editor.Focus();
+        if (_undoMenuItem is not null) _undoMenuItem.Enabled = !_referenceMode;
+        if (_redoMenuItem is not null) _redoMenuItem.Enabled = !_referenceMode;
+        UpdateTitle();
+        UpdateStatus();
+    }
+
+    private void OpenBinaryDocument()
+    {
+        using var dialog = new OpenFileDialog
+        {
+            Filter = "すべてのファイル|*.*",
+            CheckFileExists = true,
+            Title = "バイナリとして開く"
+        };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+        if (EnterBinaryMode(dialog.FileName))
+        {
+            SetBinaryMenuChecked(true);
+        }
     }
 
     private void SetBinaryMenuChecked(bool value)
@@ -524,7 +560,7 @@ public sealed class MainForm : Form
         if (_binaryMode)
         {
             SetBinaryMenuChecked(false);
-            SetBinaryMode(false);
+            LeaveBinaryMode();
         }
         if (_filePath is not null) _alternateFilePath = _filePath;
         LoadTextIntoEditor(string.Empty);
@@ -537,6 +573,11 @@ public sealed class MainForm : Form
 
     private void OpenDocument()
     {
+        if (_binaryMode)
+        {
+            SetBinaryMenuChecked(false);
+            LeaveBinaryMode();
+        }
         if (!ConfirmDiscardChanges()) return;
         using var dialog = new OpenFileDialog
         {
@@ -558,10 +599,6 @@ public sealed class MainForm : Form
             _filePath = Path.GetFullPath(path);
             _encoding = loaded.Encoding;
             _newLine = loaded.NewLine;
-            if (_binaryMode && !_binaryViewer.LoadFile(_filePath, out var binaryError))
-            {
-                MessageBox.Show(this, binaryError ?? "バイナリ表示を更新できません。", "vi_text_editor", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            }
             UpdateTitle();
             UpdateStatus();
             return true;
@@ -660,7 +697,6 @@ public sealed class MainForm : Form
             _filePath = fullPath;
             _editor.SetSavePoint();
             SetDirty(false);
-            if (_binaryMode) _binaryViewer.LoadFile(fullPath, out _);
             UpdateTitle();
             UpdateStatus();
             return true;
@@ -694,6 +730,12 @@ public sealed class MainForm : Form
 
     private void UpdateTitle()
     {
+        if (_binaryMode && _binaryFilePath is not null)
+        {
+            Text = $"{Path.GetFileName(_binaryFilePath)} [BINARY] - vi_text_editor";
+            return;
+        }
+
         var name = _filePath is null ? "無題" : Path.GetFileName(_filePath);
         Text = $"{(_dirty ? "*" : string.Empty)}{name} - vi_text_editor";
     }
@@ -734,7 +776,7 @@ public sealed class MainForm : Form
             "検索: /文字列 / ?文字列 / n / N\n" +
             "COMMAND: :e! / :e# / :q! / :w [ファイル名]\n" +
             "COMMAND: :120 / :$ / :5y a / :5,10y a / :pu a / :20pu a\n" +
-            "表示 > バイナリモード: OFFSET / 16進バイト列 / ASCIIテキストを仮想表示\n" +
+            "バイナリ: ファイル > バイナリとして開く、または表示 > バイナリモード\n" +
             "その他: gg G / x / yy / p P / u / Ctrl+R\n" +
             "INSERT: i / a / o / O、EscでNORMALへ戻る",
             "viキーバインド", MessageBoxButtons.OK, MessageBoxIcon.Information);
