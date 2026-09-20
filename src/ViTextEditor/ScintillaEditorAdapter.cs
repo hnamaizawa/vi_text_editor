@@ -14,6 +14,43 @@ internal sealed class ScintillaEditorAdapter : IEditorAdapter
 
     public string Text => _editor.Text;
     public int CaretPosition => _editor.CurrentPosition;
+    public int TextLength => _editor.TextLength;
+
+    public char CharAt(int position)
+    {
+        if (position < 0 || position >= _editor.TextLength)
+        {
+            return '\0';
+        }
+        return (char)_editor.GetCharAt(position);
+    }
+
+    public int LineStart(int position)
+    {
+        if (_editor.TextLength == 0)
+        {
+            return 0;
+        }
+        var line = _editor.LineFromPosition(Math.Clamp(position, 0, _editor.TextLength));
+        return _editor.Lines[Math.Clamp(line, 0, _editor.Lines.Count - 1)].Position;
+    }
+
+    public int LineEndExclusive(int position)
+    {
+        if (_editor.TextLength == 0)
+        {
+            return 0;
+        }
+        var line = _editor.LineFromPosition(Math.Clamp(position, 0, _editor.TextLength));
+        return _editor.Lines[Math.Clamp(line, 0, _editor.Lines.Count - 1)].EndPosition;
+    }
+
+    public string GetTextRange(int position, int length)
+    {
+        position = Math.Clamp(position, 0, _editor.TextLength);
+        length = Math.Clamp(length, 0, _editor.TextLength - position);
+        return _editor.GetTextRange(position, length);
+    }
 
     public void MoveCaret(int position)
     {
