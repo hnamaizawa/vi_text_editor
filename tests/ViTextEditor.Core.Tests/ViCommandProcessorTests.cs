@@ -107,6 +107,36 @@ public sealed class ViCommandProcessorTests
     }
 
     [Fact]
+    public void ExYankCanBePastedWithNormalModeP()
+    {
+        var editor = new FakeEditor("one\ntwo\nthree\nfour", 4);
+        var registers = new ViRegisterStore();
+        var commands = new ViCommandProcessor(editor, registers);
+        var vi = new ViKeyProcessor(editor, registers);
+
+        Assert.True(commands.Execute("y2"));
+        editor.MoveCaret(0);
+        Assert.True(vi.Handle("p"));
+
+        Assert.Equal("one\ntwo\nthree\ntwo\nthree\nfour", editor.Text);
+    }
+
+    [Fact]
+    public void NormalModeYankCanBePutWithExCommand()
+    {
+        var editor = new FakeEditor("one\ntwo\nthree", 0);
+        var registers = new ViRegisterStore();
+        var commands = new ViCommandProcessor(editor, registers);
+        var vi = new ViKeyProcessor(editor, registers);
+
+        Assert.True(vi.Handle("y"));
+        Assert.True(vi.Handle("y"));
+        Assert.True(commands.Execute("2pu"));
+
+        Assert.Equal("one\ntwo\none\nthree", editor.Text);
+    }
+
+    [Fact]
     public void PutCanTargetSpecificLineOrZero()
     {
         var editor = new FakeEditor("one\ntwo\nthree", 0);
