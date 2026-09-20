@@ -50,6 +50,8 @@ non_negotiable_invariants:
   - binary_mode_must_be_read_only_and_virtualized
   - binary_mode_must_show_offset_hex_and_ascii_columns
   - binary_mode_must_not_materialize_the_entire_file_as_hex_text
+  - binary_file_must_be_openable_directly_without_text_decode
+  - direct_binary_view_must_preserve_the_existing_text_buffer
   - normal_mode_caret_must_be_visually_distinct
   - editor_font_must_prefer_japanese_monospaced_font
   - reference_mode_must_be_enabled_by_default
