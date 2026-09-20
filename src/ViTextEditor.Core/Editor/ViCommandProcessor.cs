@@ -43,6 +43,13 @@ public sealed class ViCommandProcessor
                 return false;
             }
 
+            // 既存仕様として、単独の大きすぎる行番号は最終行へクランプする。
+            if (!rangeText.Contains(',') && int.TryParse(rangeText, out var requestedLine) && requestedLine >= 1)
+            {
+                MoveToLine(Math.Min(requestedLine, CountLines(_editor.Text)));
+                return true;
+            }
+
             if (!TryResolveRange(rangeText, allowZero: false, out _, out var endLine))
             {
                 return false;
