@@ -19,6 +19,7 @@ public sealed class MainForm : Form
     private readonly ToolStripStatusLabel _eolLabel = new();
     private readonly ToolStripStatusLabel _positionLabel = new();
     private readonly List<ViRepeatEdit> _insertRepeatEdits = [];
+    private readonly ViRegisterStore _registers = new();
     private readonly ViKeyProcessor _vi;
     private readonly ViNavigationProcessor _navigation;
     private readonly ViSearchProcessor _search;
@@ -67,6 +68,9 @@ public sealed class MainForm : Form
         _editor.SavePointLeft += EditorOnSavePointLeft;
         _editor.SavePointReached += EditorOnSavePointReached;
 
+        _binaryViewer.SearchInputRequested += forward => BeginCommandInput(forward ? '/' : '?');
+        _binaryViewer.StatusChanged += (_, _) => UpdateStatus();
+
         ConfigureCommandLine();
 
         Controls.Add(_editor);
@@ -77,10 +81,10 @@ public sealed class MainForm : Form
         MainMenuStrip = menu;
 
         var adapter = new ScintillaEditorAdapter(_editor);
-        _vi = new ViKeyProcessor(adapter);
+        _vi = new ViKeyProcessor(adapter, _registers);
         _navigation = new ViNavigationProcessor(adapter);
         _search = new ViSearchProcessor(adapter);
-        _commands = new ViCommandProcessor(adapter);
+        _commands = new ViCommandProcessor(adapter, _registers);
         _vi.ModeChanged += (_, _) =>
         {
             HandleViModeTransition();
@@ -175,7 +179,7 @@ public sealed class MainForm : Form
 
         var help = new ToolStripMenuItem("ヘルプ(&H)");
         help.DropDownItems.Add(new ToolStripMenuItem("viキーバインド", null, (_, _) => ShowKeyBindings()));
-        help.DropDownItems.Add(new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show(this, "vi_text_editor v0.1.9", "バージョン情報", MessageBoxButtons.OK, MessageBoxIcon.Information)));
+        help.DropDownItems.Add(new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show(this, "vi_text_editor v0.1.11", "バージョン情報", MessageBoxButtons.OK, MessageBoxIcon.Information)));
 
         menu.Items.AddRange([file, edit, mode, view, help]);
         return menu;
@@ -185,7 +189,7 @@ public sealed class MainForm : Form
     {
         var status = new StatusStrip();
         _modeLabel.AutoSize = false;
-        _modeLabel.Width = 90;
+        _modeLabel.Width = 110;
         _accessLabel.AutoSize = false;
         _accessLabel.Width = 90;
         _encodingLabel.Spring = true;
@@ -240,7 +244,7 @@ public sealed class MainForm : Form
         _editor.Visible = false;
         _binaryViewer.Visible = true;
         _binaryViewer.BringToFront();
-        _binaryViewer.Focus();
+        _binaryViewer.FocusViewer();
         if (_undoMenuItem is not null) _undoMenuItem.Enabled = false;
         if (_redoMenuItem is not null) _redoMenuItem.Enabled = false;
         UpdateTitle();
@@ -273,10 +277,7 @@ public sealed class MainForm : Form
         };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
 
-        if (EnterBinaryMode(dialog.FileName))
-        {
-            SetBinaryMenuChecked(true);
-        }
+        if (EnterBinaryMode(dialog.FileName)) SetBinaryMenuChecked(true);
     }
 
     private void SetBinaryMenuChecked(bool value)
@@ -448,7 +449,7 @@ public sealed class MainForm : Form
 
     private void BeginCommandInput(char prefix)
     {
-        if (_binaryMode) return;
+        if (_binaryMode && prefix == ':') return;
         _commandPrefix = prefix;
         _commandLine.Text = prefix.ToString();
         _commandLine.Visible = true;
@@ -478,6 +479,16 @@ public sealed class MainForm : Form
         if (e.KeyCode != Keys.Enter) return;
 
         var value = _commandLine.Text.Length > 1 ? _commandLine.Text[1..] : string.Empty;
+        if (_binaryMode && _commandPrefix is '/' or '?')
+        {
+            _binaryViewer.Search(value, forward: _commandPrefix == '/');
+            EndCommandInput();
+            UpdateStatus();
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+            return;
+        }
+
         if (_commandPrefix == ':' && ViExFileCommandParser.TryParse(value, out var fileCommand))
         {
             EndCommandInput();
@@ -533,7 +544,8 @@ public sealed class MainForm : Form
     {
         _commandLine.Visible = false;
         _commandLine.Text = string.Empty;
-        _editor.Focus();
+        if (_binaryMode) _binaryViewer.FocusViewer();
+        else _editor.Focus();
         UpdateStatus();
     }
 
@@ -744,7 +756,7 @@ public sealed class MainForm : Form
     {
         if (_binaryMode)
         {
-            _modeLabel.Text = "BINARY";
+            _modeLabel.Text = _commandLine.Visible ? "BINARY SEARCH" : "BINARY";
             _accessLabel.Text = "参照";
             _encodingLabel.Text = "RAW bytes";
             _eolLabel.Text = string.Empty;
@@ -775,8 +787,10 @@ public sealed class MainForm : Form
             "DELETE: dw / de / dW / dE / d$ / D / dd\n" +
             "検索: /文字列 / ?文字列 / n / N\n" +
             "COMMAND: :e! / :e# / :q! / :w [ファイル名]\n" +
-            "COMMAND: :120 / :$ / :5y a / :5,10y a / :pu a / :20pu a\n" +
-            "バイナリ: ファイル > バイナリとして開く、または表示 > バイナリモード\n" +
+            "COMMAND: :y3 / :y a 3 / :5y a / :5,10y a / :pu a / :20pu a\n" +
+            "レジスタ: COMMANDのyankとNORMALのyy/dd/dw/x/p/Pは同じ無名レジスタを共有\n" +
+            "バイナリ移動: j/k（J/Kも可）/ Ctrl+F Ctrl+B / Ctrl+D Ctrl+U / gg / G\n" +
+            "バイナリ検索: /文字列 / ?文字列 / n / N。RAW検索は /hex:4D 5A の形式\n" +
             "その他: gg G / x / yy / p P / u / Ctrl+R\n" +
             "INSERT: i / a / o / O、EscでNORMALへ戻る",
             "viキーバインド", MessageBoxButtons.OK, MessageBoxIcon.Information);
