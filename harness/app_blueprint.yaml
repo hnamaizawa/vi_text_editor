@@ -1,6 +1,6 @@
 project:
   name: vi_text_editor
-  version: 0.1.8
+  version: 0.1.9
   platform: windows
   ui: winforms
   editor_component: Scintilla5.NET
@@ -26,6 +26,9 @@ non_negotiable_invariants:
   - vi_word_and_WORD_motions_must_remain_distinct
   - change_word_commands_must_delete_target_and_enter_insert_mode
   - delete_word_commands_must_support_dw_dW_de_dE_and_line_end_delete
+  - dot_must_repeat_the_last_change_not_plain_navigation_or_yank
+  - dot_must_repeat_put_delete_change_and_insert_text_changes
+  - insert_repeat_must_preserve_ime_committed_text_and_backspace_edits
   - ctrl_f_and_ctrl_b_must_move_one_page_with_caret_following
   - ctrl_d_and_ctrl_u_must_move_half_page_with_caret_following
   - slash_and_question_search_must_support_n_and_N_repeat
@@ -41,6 +44,14 @@ non_negotiable_invariants:
   - alternate_file_must_track_previous_current_file
   - reference_mode_must_allow_navigation_and_yank_but_block_put
   - status_position_updates_must_not_scan_entire_document_per_keypress
+  - normal_vi_motion_must_use_native_position_apis_instead_of_full_document_copies
+  - scintilla_layout_cache_must_cover_visible_page
+  - scintilla_extra_buffered_draw_must_be_disabled_on_windows
+  - binary_mode_must_be_read_only_and_virtualized
+  - binary_mode_must_show_offset_hex_and_ascii_columns
+  - binary_mode_must_not_materialize_the_entire_file_as_hex_text
+  - binary_file_must_be_openable_directly_without_text_decode
+  - direct_binary_view_must_preserve_the_existing_text_buffer
   - normal_mode_caret_must_be_visually_distinct
   - editor_font_must_prefer_japanese_monospaced_font
   - reference_mode_must_be_enabled_by_default

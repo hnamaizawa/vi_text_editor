@@ -14,6 +14,49 @@ internal sealed class ScintillaEditorAdapter : IEditorAdapter
 
     public string Text => _editor.Text;
     public int CaretPosition => _editor.CurrentPosition;
+    public int TextLength => _editor.TextLength;
+
+    public char CharAt(int position)
+    {
+        if (position < 0 || position >= _editor.TextLength)
+        {
+            return '\0';
+        }
+        return (char)_editor.GetCharAt(position);
+    }
+
+    public int LineStart(int position)
+    {
+        if (_editor.TextLength == 0)
+        {
+            return 0;
+        }
+        var line = _editor.LineFromPosition(Math.Clamp(position, 0, _editor.TextLength));
+        return _editor.Lines[Math.Clamp(line, 0, _editor.Lines.Count - 1)].Position;
+    }
+
+    public int LineEndExclusive(int position)
+    {
+        if (_editor.TextLength == 0)
+        {
+            return 0;
+        }
+
+        var line = _editor.LineFromPosition(Math.Clamp(position, 0, _editor.TextLength));
+        var item = _editor.Lines[Math.Clamp(line, 0, _editor.Lines.Count - 1)];
+        var end = item.EndPosition;
+        // Line.EndPosition includes CR/LF because Line.Length includes EOL characters.
+        if (end > item.Position && CharAt(end - 1) == '\n') end--;
+        if (end > item.Position && CharAt(end - 1) == '\r') end--;
+        return end;
+    }
+
+    public string GetTextRange(int position, int length)
+    {
+        position = Math.Clamp(position, 0, _editor.TextLength);
+        length = Math.Clamp(length, 0, _editor.TextLength - position);
+        return _editor.GetTextRange(position, length);
+    }
 
     public void MoveCaret(int position)
     {
@@ -36,37 +79,27 @@ internal sealed class ScintillaEditorAdapter : IEditorAdapter
 
     public void ScrollPage(int direction)
     {
-        if (direction == 0)
-        {
-            return;
-        }
-
+        if (direction == 0) return;
         ScrollByVisibleLines(Math.Sign(direction) * Math.Max(1, _editor.LinesOnScreen - 2));
     }
 
     public void ScrollHalfPage(int direction)
     {
-        if (direction == 0)
-        {
-            return;
-        }
-
+        if (direction == 0) return;
         ScrollByVisibleLines(Math.Sign(direction) * Math.Max(1, _editor.LinesOnScreen / 2));
     }
 
     private void ScrollByVisibleLines(int deltaLines)
     {
-        if (_editor.Lines.Count == 0 || deltaLines == 0)
-        {
-            return;
-        }
+        if (_editor.Lines.Count == 0 || deltaLines == 0) return;
 
         var currentLine = Math.Clamp(_editor.CurrentLine, 0, _editor.Lines.Count - 1);
         var currentLineStart = _editor.Lines[currentLine].Position;
         var column = Math.Max(0, _editor.CurrentPosition - currentLineStart);
         var targetLine = Math.Clamp(currentLine + deltaLines, 0, _editor.Lines.Count - 1);
         var target = _editor.Lines[targetLine];
-        var maxTargetPosition = Math.Max(target.Position, target.EndPosition - 1);
+        var targetEnd = LineEndExclusive(target.Position);
+        var maxTargetPosition = Math.Max(target.Position, targetEnd > target.Position ? targetEnd - 1 : target.Position);
         var targetPosition = Math.Min(target.Position + column, maxTargetPosition);
 
         var targetFirstVisibleLine = Math.Clamp(

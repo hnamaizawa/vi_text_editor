@@ -44,7 +44,6 @@ public sealed class ViKeyProcessorTests
     public void CaretMovesToFirstNonBlankCharacterOfCurrentLine()
     {
         var (editor, vi) = Create("one\n    two\nthree", 10);
-
         Assert.True(vi.Handle("^"));
         Assert.Equal(8, editor.CaretPosition);
     }
@@ -53,10 +52,8 @@ public sealed class ViKeyProcessorTests
     public void CwChangesCurrentWordAndEntersInsertMode()
     {
         var (editor, vi) = Create("alpha beta", 0);
-
         vi.Handle("c");
         Assert.True(vi.Handle("w"));
-
         Assert.Equal(" beta", editor.Text);
         Assert.Equal(0, editor.CaretPosition);
         Assert.Equal(EditorMode.Insert, vi.Mode);
@@ -66,10 +63,8 @@ public sealed class ViKeyProcessorTests
     public void CwFromMiddleOfWordChangesFromCaretToWordEnd()
     {
         var (editor, vi) = Create("alpha beta", 2);
-
         vi.Handle("c");
         vi.Handle("w");
-
         Assert.Equal("al beta", editor.Text);
         Assert.Equal(2, editor.CaretPosition);
         Assert.Equal(EditorMode.Insert, vi.Mode);
@@ -79,10 +74,8 @@ public sealed class ViKeyProcessorTests
     public void UppercaseCwChangesWhitespaceSeparatedWord()
     {
         var (editor, vi) = Create("foo-bar baz", 0);
-
         vi.Handle("c");
         vi.Handle("W");
-
         Assert.Equal(" baz", editor.Text);
         Assert.Equal(EditorMode.Insert, vi.Mode);
     }
@@ -91,10 +84,8 @@ public sealed class ViKeyProcessorTests
     public void CeChangesCurrentWordAndEntersInsertMode()
     {
         var (editor, vi) = Create("alpha beta", 0);
-
         vi.Handle("c");
         vi.Handle("e");
-
         Assert.Equal(" beta", editor.Text);
         Assert.Equal(EditorMode.Insert, vi.Mode);
     }
@@ -103,10 +94,8 @@ public sealed class ViKeyProcessorTests
     public void CDollarChangesToEndOfLine()
     {
         var (editor, vi) = Create("one two\nthree", 4);
-
         vi.Handle("c");
         vi.Handle("$");
-
         Assert.Equal("one \nthree", editor.Text);
         Assert.Equal(EditorMode.Insert, vi.Mode);
     }
@@ -115,10 +104,8 @@ public sealed class ViKeyProcessorTests
     public void DwDeletesWordAndFollowingSpaceWithoutEnteringInsertMode()
     {
         var (editor, vi) = Create("alpha beta", 0);
-
         vi.Handle("d");
         vi.Handle("w");
-
         Assert.Equal("beta", editor.Text);
         Assert.Equal(0, editor.CaretPosition);
         Assert.Equal(EditorMode.Normal, vi.Mode);
@@ -128,10 +115,8 @@ public sealed class ViKeyProcessorTests
     public void DWDeletesWhitespaceSeparatedWordAndFollowingSpace()
     {
         var (editor, vi) = Create("foo-bar baz", 0);
-
         vi.Handle("d");
         vi.Handle("W");
-
         Assert.Equal("baz", editor.Text);
         Assert.Equal(EditorMode.Normal, vi.Mode);
     }
@@ -140,10 +125,8 @@ public sealed class ViKeyProcessorTests
     public void DwDoesNotDeleteLineBreakAtEndOfLine()
     {
         var (editor, vi) = Create("alpha\nbeta", 0);
-
         vi.Handle("d");
         vi.Handle("w");
-
         Assert.Equal("\nbeta", editor.Text);
     }
 
@@ -194,6 +177,53 @@ public sealed class ViKeyProcessorTests
     }
 
     [Fact]
+    public void DotRepeatsLastPutButNotTheYank()
+    {
+        var (editor, vi) = Create("one\ntwo", 0);
+        vi.Handle("y");
+        vi.Handle("y");
+        vi.Handle("p");
+        vi.Handle(".");
+        Assert.Equal("one\none\none\ntwo", editor.Text);
+    }
+
+    [Fact]
+    public void DotRepeatsCharacterDelete()
+    {
+        var (editor, vi) = Create("abc", 0);
+        vi.Handle("x");
+        vi.Handle(".");
+        Assert.Equal("c", editor.Text);
+    }
+
+    [Fact]
+    public void DotRepeatsDeleteWordMotion()
+    {
+        var (editor, vi) = Create("one two three", 0);
+        vi.Handle("d");
+        vi.Handle("w");
+        vi.Handle(".");
+        Assert.Equal("three", editor.Text);
+    }
+
+    [Fact]
+    public void DotRepeatsChangeIncludingInsertedText()
+    {
+        var (editor, vi) = Create("one two", 0);
+        vi.Handle("c");
+        vi.Handle("w");
+        editor.InsertText(editor.CaretPosition, "X");
+        vi.Handle("Esc");
+        vi.CommitInsertRepeat([ViRepeatEdit.Insert(0, "X")]);
+
+        editor.MoveCaret(2);
+        vi.Handle(".");
+
+        Assert.Equal("X X", editor.Text);
+        Assert.Equal(EditorMode.Normal, vi.Mode);
+    }
+
+    [Fact]
     public void XDeletesCharacterAndUppercasePCanRestoreItBeforeCaret()
     {
         var (editor, vi) = Create("abc", 1);
@@ -234,6 +264,7 @@ public sealed class ViKeyProcessorTests
     private sealed class FakeEditor : IEditorAdapter
     {
         private string _text;
+
         public FakeEditor(string text, int caret)
         {
             _text = text;

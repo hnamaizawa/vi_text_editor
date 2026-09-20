@@ -7,29 +7,41 @@ namespace ViTextEditor;
 
 public sealed class MainForm : Form
 {
+    private const int SciSetLayoutCache = 2272;
+    private const int ScCachePage = 2;
+
     private readonly Scintilla _editor = new();
+    private readonly BinaryViewerControl _binaryViewer = new();
     private readonly TextBox _commandLine = new();
     private readonly ToolStripStatusLabel _modeLabel = new();
     private readonly ToolStripStatusLabel _accessLabel = new();
     private readonly ToolStripStatusLabel _encodingLabel = new();
     private readonly ToolStripStatusLabel _eolLabel = new();
     private readonly ToolStripStatusLabel _positionLabel = new();
+    private readonly List<ViRepeatEdit> _insertRepeatEdits = [];
     private readonly ViKeyProcessor _vi;
     private readonly ViNavigationProcessor _navigation;
     private readonly ViSearchProcessor _search;
     private readonly ViCommandProcessor _commands;
     private ToolStripMenuItem? _referenceModeMenuItem;
+    private ToolStripMenuItem? _binaryModeMenuItem;
     private ToolStripMenuItem? _undoMenuItem;
     private ToolStripMenuItem? _redoMenuItem;
 
     private string? _filePath;
     private string? _alternateFilePath;
+    private string? _binaryFilePath;
     private Encoding _encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
     private string _newLine = "\r\n";
     private bool _dirty;
     private bool _loading;
     private bool _referenceMode = true;
+    private bool _binaryMode;
+    private bool _changingBinaryMode;
     private bool _forceClose;
+    private bool _capturingInsertRepeat;
+    private int _insertRepeatAnchor;
+    private EditorMode _lastViMode = EditorMode.Normal;
     private char _commandPrefix;
 
     public MainForm()
@@ -50,13 +62,15 @@ public sealed class MainForm : Form
         _editor.KeyPress += EditorOnKeyPress;
         _editor.UpdateUI += (_, _) => UpdateStatus();
         _editor.MouseUp += (_, _) => UpdateStatus();
-        _editor.TextChanged += (_, _) => UpdateStatus();
+        _editor.Insert += EditorOnInsert;
+        _editor.Delete += EditorOnDelete;
         _editor.SavePointLeft += EditorOnSavePointLeft;
         _editor.SavePointReached += EditorOnSavePointReached;
 
         ConfigureCommandLine();
 
         Controls.Add(_editor);
+        Controls.Add(_binaryViewer);
         Controls.Add(_commandLine);
         Controls.Add(status);
         Controls.Add(menu);
@@ -69,6 +83,7 @@ public sealed class MainForm : Form
         _commands = new ViCommandProcessor(adapter);
         _vi.ModeChanged += (_, _) =>
         {
+            HandleViModeTransition();
             ApplyCaretStyleForMode();
             UpdateStatus();
         };
@@ -88,6 +103,9 @@ public sealed class MainForm : Form
         _editor.Styles[Style.Default].SizeF = 11f;
         _editor.StyleClearAll();
         _editor.CaretWidth = 3;
+
+        _editor.BufferedDraw = false;
+        _editor.DirectMessage(SciSetLayoutCache, new IntPtr(ScCachePage));
     }
 
     private void ConfigureCommandLine()
@@ -107,22 +125,14 @@ public sealed class MainForm : Form
 
         foreach (var candidate in new[] { "BIZ UDGothic", "BIZ UDゴシック", "MS Gothic", "ＭＳ ゴシック" })
         {
-            if (installed.Contains(candidate))
-            {
-                return candidate;
-            }
+            if (installed.Contains(candidate)) return candidate;
         }
-
         return "Consolas";
     }
 
     private void ApplyCaretStyleForMode()
     {
-        if (_vi is null)
-        {
-            return;
-        }
-
+        if (_vi is null) return;
         _editor.CaretStyle = _vi.Mode == EditorMode.Normal ? CaretStyle.Block : CaretStyle.Line;
         _editor.CaretWidth = 3;
     }
@@ -133,6 +143,7 @@ public sealed class MainForm : Form
         var file = new ToolStripMenuItem("ファイル(&F)");
         file.DropDownItems.Add(new ToolStripMenuItem("新規(&N)", null, (_, _) => NewDocument(), Keys.Control | Keys.N));
         file.DropDownItems.Add(new ToolStripMenuItem("開く(&O)...", null, (_, _) => OpenDocument(), Keys.Control | Keys.O));
+        file.DropDownItems.Add(new ToolStripMenuItem("バイナリとして開く(&B)...", null, (_, _) => OpenBinaryDocument()));
         file.DropDownItems.Add(new ToolStripSeparator());
         file.DropDownItems.Add(new ToolStripMenuItem("保存(&S)", null, (_, _) => SaveDocument(), Keys.Control | Keys.S));
         file.DropDownItems.Add(new ToolStripMenuItem("名前を付けて保存(&A)...", null, (_, _) => SaveDocumentAs()));
@@ -154,11 +165,19 @@ public sealed class MainForm : Form
         };
         mode.DropDownItems.Add(_referenceModeMenuItem);
 
+        var view = new ToolStripMenuItem("表示(&V)");
+        _binaryModeMenuItem = new ToolStripMenuItem("バイナリモード(&B)") { CheckOnClick = true };
+        _binaryModeMenuItem.CheckedChanged += (_, _) =>
+        {
+            if (!_changingBinaryMode) SetBinaryMode(_binaryModeMenuItem.Checked);
+        };
+        view.DropDownItems.Add(_binaryModeMenuItem);
+
         var help = new ToolStripMenuItem("ヘルプ(&H)");
         help.DropDownItems.Add(new ToolStripMenuItem("viキーバインド", null, (_, _) => ShowKeyBindings()));
-        help.DropDownItems.Add(new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show(this, "vi_text_editor v0.1.8", "バージョン情報", MessageBoxButtons.OK, MessageBoxIcon.Information)));
+        help.DropDownItems.Add(new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show(this, "vi_text_editor v0.1.9", "バージョン情報", MessageBoxButtons.OK, MessageBoxIcon.Information)));
 
-        menu.Items.AddRange([file, edit, mode, help]);
+        menu.Items.AddRange([file, edit, mode, view, help]);
         return menu;
     }
 
@@ -177,14 +196,95 @@ public sealed class MainForm : Form
 
     private void ApplyReferenceMode()
     {
-        if (_referenceMode && _vi is not null)
-        {
-            _vi.Handle("Esc");
-        }
+        if (_referenceMode && _vi is not null) _vi.Handle("Esc");
         _editor.ReadOnly = _referenceMode;
+        if (_undoMenuItem is not null) _undoMenuItem.Enabled = !_referenceMode && !_binaryMode;
+        if (_redoMenuItem is not null) _redoMenuItem.Enabled = !_referenceMode && !_binaryMode;
+        UpdateStatus();
+    }
+
+    private void SetBinaryMode(bool enabled)
+    {
+        if (enabled)
+        {
+            if (_filePath is null)
+            {
+                MessageBox.Show(this, "現在ファイルがありません。『ファイル > バイナリとして開く』から直接開くこともできます。", "vi_text_editor", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                SetBinaryMenuChecked(false);
+                return;
+            }
+
+            if (!EnterBinaryMode(_filePath))
+            {
+                SetBinaryMenuChecked(false);
+                return;
+            }
+        }
+        else
+        {
+            LeaveBinaryMode();
+        }
+    }
+
+    private bool EnterBinaryMode(string path)
+    {
+        if (!_binaryViewer.LoadFile(path, out var error))
+        {
+            MessageBox.Show(this, error ?? "バイナリ表示を開始できません。", "vi_text_editor", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return false;
+        }
+
+        _binaryFilePath = Path.GetFullPath(path);
+        _binaryMode = true;
+        _commandLine.Visible = false;
+        _editor.Visible = false;
+        _binaryViewer.Visible = true;
+        _binaryViewer.BringToFront();
+        _binaryViewer.Focus();
+        if (_undoMenuItem is not null) _undoMenuItem.Enabled = false;
+        if (_redoMenuItem is not null) _redoMenuItem.Enabled = false;
+        UpdateTitle();
+        UpdateStatus();
+        return true;
+    }
+
+    private void LeaveBinaryMode()
+    {
+        _binaryMode = false;
+        _binaryFilePath = null;
+        _binaryViewer.Visible = false;
+        _binaryViewer.CloseFile();
+        _editor.Visible = true;
+        _editor.BringToFront();
+        _editor.Focus();
         if (_undoMenuItem is not null) _undoMenuItem.Enabled = !_referenceMode;
         if (_redoMenuItem is not null) _redoMenuItem.Enabled = !_referenceMode;
+        UpdateTitle();
         UpdateStatus();
+    }
+
+    private void OpenBinaryDocument()
+    {
+        using var dialog = new OpenFileDialog
+        {
+            Filter = "すべてのファイル|*.*",
+            CheckFileExists = true,
+            Title = "バイナリとして開く"
+        };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+        if (EnterBinaryMode(dialog.FileName))
+        {
+            SetBinaryMenuChecked(true);
+        }
+    }
+
+    private void SetBinaryMenuChecked(bool value)
+    {
+        if (_binaryModeMenuItem is null) return;
+        _changingBinaryMode = true;
+        try { _binaryModeMenuItem.Checked = value; }
+        finally { _changingBinaryMode = false; }
     }
 
     private void ResetUndoBaseline()
@@ -193,8 +293,50 @@ public sealed class MainForm : Form
         SetDirty(false);
     }
 
+    private void HandleViModeTransition()
+    {
+        if (_vi.IsRepeating)
+        {
+            _lastViMode = _vi.Mode;
+            return;
+        }
+
+        if (_lastViMode != EditorMode.Insert && _vi.Mode == EditorMode.Insert && _vi.IsCapturingInsertRepeat)
+        {
+            _insertRepeatEdits.Clear();
+            _insertRepeatAnchor = _editor.CurrentPosition;
+            _capturingInsertRepeat = true;
+        }
+        else if (_lastViMode == EditorMode.Insert && _vi.Mode == EditorMode.Normal && _capturingInsertRepeat)
+        {
+            _capturingInsertRepeat = false;
+            _vi.CommitInsertRepeat(_insertRepeatEdits.ToArray());
+            _insertRepeatEdits.Clear();
+        }
+
+        _lastViMode = _vi.Mode;
+    }
+
+    private void EditorOnInsert(object? sender, ModificationEventArgs e)
+    {
+        if (_capturingInsertRepeat && !_vi.IsRepeating && !_loading && !string.IsNullOrEmpty(e.Text))
+        {
+            _insertRepeatEdits.Add(ViRepeatEdit.Insert(e.Position - _insertRepeatAnchor, e.Text));
+        }
+    }
+
+    private void EditorOnDelete(object? sender, ModificationEventArgs e)
+    {
+        if (_capturingInsertRepeat && !_vi.IsRepeating && !_loading && !string.IsNullOrEmpty(e.Text))
+        {
+            _insertRepeatEdits.Add(ViRepeatEdit.Delete(e.Position - _insertRepeatAnchor, e.Text));
+        }
+    }
+
     private void EditorOnKeyDown(object? sender, KeyEventArgs e)
     {
+        if (_binaryMode) return;
+
         if (_referenceMode && e.Control && (e.KeyCode == Keys.Z || e.KeyCode == Keys.Y || e.KeyCode == Keys.R))
         {
             e.Handled = true;
@@ -245,10 +387,7 @@ public sealed class MainForm : Form
 
     private void EditorOnKeyPress(object? sender, KeyPressEventArgs e)
     {
-        if (_vi.Mode != EditorMode.Normal || _commandLine.Visible)
-        {
-            return;
-        }
+        if (_binaryMode || _vi.Mode != EditorMode.Normal || _commandLine.Visible) return;
 
         var token = e.KeyChar switch
         {
@@ -256,6 +395,7 @@ public sealed class MainForm : Form
             ':' => ":",
             '/' => "/",
             '?' => "?",
+            '.' => ".",
             _ => null
         };
 
@@ -266,21 +406,17 @@ public sealed class MainForm : Form
             return;
         }
 
-        if (token == "^")
+        if (token is "^" or ".")
         {
-            _vi.Handle(token);
+            if (!_referenceMode || token != ".") _vi.Handle(token);
             e.Handled = true;
             return;
         }
 
-        // NORMALモードでは未対応の印字文字を本文へ挿入しない。
-        if (!char.IsControl(e.KeyChar))
-        {
-            e.Handled = true;
-        }
+        if (!char.IsControl(e.KeyChar)) e.Handled = true;
     }
 
-    private static bool IsMutatingViToken(string token) => token is "i" or "a" or "o" or "O" or "x" or "d" or "D" or "c" or "p" or "P" or "u" or "Ctrl+r";
+    private static bool IsMutatingViToken(string token) => token is "i" or "a" or "o" or "O" or "x" or "d" or "D" or "c" or "p" or "P" or "." or "u" or "Ctrl+r";
 
     private static string? ToViToken(KeyEventArgs e)
     {
@@ -301,6 +437,7 @@ public sealed class MainForm : Form
             };
         }
         if (e.KeyCode == Keys.OemQuestion) return "/";
+        if (e.KeyCode == Keys.OemPeriod) return ".";
         return e.KeyCode switch
         {
             Keys.I => "i", Keys.A => "a", Keys.O => "o", Keys.H => "h", Keys.J => "j", Keys.K => "k", Keys.L => "l",
@@ -311,6 +448,7 @@ public sealed class MainForm : Form
 
     private void BeginCommandInput(char prefix)
     {
+        if (_binaryMode) return;
         _commandPrefix = prefix;
         _commandLine.Text = prefix.ToString();
         _commandLine.Visible = true;
@@ -337,13 +475,9 @@ public sealed class MainForm : Form
             return;
         }
 
-        if (e.KeyCode != Keys.Enter)
-        {
-            return;
-        }
+        if (e.KeyCode != Keys.Enter) return;
 
         var value = _commandLine.Text.Length > 1 ? _commandLine.Text[1..] : string.Empty;
-
         if (_commandPrefix == ':' && ViExFileCommandParser.TryParse(value, out var fileCommand))
         {
             EndCommandInput();
@@ -366,10 +500,7 @@ public sealed class MainForm : Form
             };
 
         EndCommandInput();
-        if (acted)
-        {
-            _editor.ScrollCaret();
-        }
+        if (acted) _editor.ScrollCaret();
         UpdateStatus();
         e.Handled = true;
         e.SuppressKeyPress = true;
@@ -408,27 +539,17 @@ public sealed class MainForm : Form
 
     private void EditorOnSavePointLeft(object? sender, EventArgs e)
     {
-        if (!_loading)
-        {
-            SetDirty(true);
-        }
+        if (!_loading) SetDirty(true);
     }
 
     private void EditorOnSavePointReached(object? sender, EventArgs e)
     {
-        if (!_loading)
-        {
-            SetDirty(false);
-        }
+        if (!_loading) SetDirty(false);
     }
 
     private void SetDirty(bool dirty)
     {
-        if (_dirty == dirty)
-        {
-            return;
-        }
-
+        if (_dirty == dirty) return;
         _dirty = dirty;
         UpdateTitle();
     }
@@ -436,10 +557,12 @@ public sealed class MainForm : Form
     private void NewDocument()
     {
         if (!ConfirmDiscardChanges()) return;
-        if (_filePath is not null)
+        if (_binaryMode)
         {
-            _alternateFilePath = _filePath;
+            SetBinaryMenuChecked(false);
+            LeaveBinaryMode();
         }
+        if (_filePath is not null) _alternateFilePath = _filePath;
         LoadTextIntoEditor(string.Empty);
         _filePath = null;
         _encoding = new UTF8Encoding(false);
@@ -450,10 +573,15 @@ public sealed class MainForm : Form
 
     private void OpenDocument()
     {
+        if (_binaryMode)
+        {
+            SetBinaryMenuChecked(false);
+            LeaveBinaryMode();
+        }
         if (!ConfirmDiscardChanges()) return;
         using var dialog = new OpenFileDialog
         {
-            Filter = "テキストファイル|*.txt;*.log;*.csv;*.md;*.json;*.xml;*.cs;*.py;*.js;*.ts;*.yaml;*.yml|すべてのファイル|*.*",
+            Filter = "テキスト/データファイル|*.txt;*.log;*.csv;*.md;*.json;*.xml;*.cs;*.py;*.js;*.ts;*.yaml;*.yml|すべてのファイル|*.*",
             CheckFileExists = true
         };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
@@ -467,10 +595,7 @@ public sealed class MainForm : Form
             var loaded = TextFileService.Load(path);
             var previousPath = _filePath;
             LoadTextIntoEditor(loaded.Text);
-            if (updateAlternate && previousPath is not null && !PathsEqual(previousPath, path))
-            {
-                _alternateFilePath = previousPath;
-            }
+            if (updateAlternate && previousPath is not null && !PathsEqual(previousPath, path)) _alternateFilePath = previousPath;
             _filePath = Path.GetFullPath(path);
             _encoding = loaded.Encoding;
             _newLine = loaded.NewLine;
@@ -492,7 +617,6 @@ public sealed class MainForm : Form
             MessageBox.Show(this, "再読み込みできる現在ファイルがありません。", "vi_text_editor", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
-
         OpenFilePath(_filePath, updateAlternate: false);
     }
 
@@ -503,14 +627,8 @@ public sealed class MainForm : Form
             MessageBox.Show(this, "副ファイル（alternate file）がありません。", "vi_text_editor", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
-
-        if (!ConfirmDiscardChanges())
-        {
-            return;
-        }
-
-        var target = _alternateFilePath;
-        OpenFilePath(target, updateAlternate: true);
+        if (!ConfirmDiscardChanges()) return;
+        OpenFilePath(_alternateFilePath, updateAlternate: true);
     }
 
     private void LoadTextIntoEditor(string text)
@@ -523,6 +641,8 @@ public sealed class MainForm : Form
             _editor.Text = text;
             _editor.GotoPosition(0);
             ResetUndoBaseline();
+            _insertRepeatEdits.Clear();
+            _capturingInsertRepeat = false;
         }
         finally
         {
@@ -546,29 +666,17 @@ public sealed class MainForm : Form
 
     private bool SaveAsFromCommand(string? rawPath)
     {
-        if (string.IsNullOrWhiteSpace(rawPath))
-        {
-            return SaveDocument();
-        }
-
+        if (string.IsNullOrWhiteSpace(rawPath)) return SaveDocument();
         try
         {
             var pathText = rawPath.Trim();
-            if (pathText.Length >= 2 && pathText[0] == '"' && pathText[^1] == '"')
-            {
-                pathText = pathText[1..^1];
-            }
-
+            if (pathText.Length >= 2 && pathText[0] == '"' && pathText[^1] == '"') pathText = pathText[1..^1];
             var path = Path.GetFullPath(pathText);
             if (File.Exists(path) && !PathsEqual(_filePath, path))
             {
                 var overwrite = MessageBox.Show(this, $"既存のファイルを上書きしますか？\n{path}", "vi_text_editor", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-                if (overwrite != DialogResult.Yes)
-                {
-                    return false;
-                }
+                if (overwrite != DialogResult.Yes) return false;
             }
-
             return SaveTo(path);
         }
         catch (Exception ex)
@@ -585,14 +693,12 @@ public sealed class MainForm : Form
             var fullPath = Path.GetFullPath(path);
             var previousPath = _filePath;
             TextFileService.Save(fullPath, _editor.Text, _encoding);
-            if (previousPath is not null && !PathsEqual(previousPath, fullPath))
-            {
-                _alternateFilePath = previousPath;
-            }
+            if (previousPath is not null && !PathsEqual(previousPath, fullPath)) _alternateFilePath = previousPath;
             _filePath = fullPath;
             _editor.SetSavePoint();
             SetDirty(false);
             UpdateTitle();
+            UpdateStatus();
             return true;
         }
         catch (Exception ex)
@@ -604,19 +710,9 @@ public sealed class MainForm : Form
 
     private static bool PathsEqual(string? left, string? right)
     {
-        if (left is null || right is null)
-        {
-            return false;
-        }
-
-        try
-        {
-            return string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.OrdinalIgnoreCase);
-        }
-        catch
-        {
-            return string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
-        }
+        if (left is null || right is null) return false;
+        try { return string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.OrdinalIgnoreCase); }
+        catch { return string.Equals(left, right, StringComparison.OrdinalIgnoreCase); }
     }
 
     private bool ConfirmDiscardChanges()
@@ -628,22 +724,34 @@ public sealed class MainForm : Form
 
     private void OnFormClosing(object? sender, FormClosingEventArgs e)
     {
-        if (_forceClose)
-        {
-            return;
-        }
-
+        if (_forceClose) return;
         if (!ConfirmDiscardChanges()) e.Cancel = true;
     }
 
     private void UpdateTitle()
     {
+        if (_binaryMode && _binaryFilePath is not null)
+        {
+            Text = $"{Path.GetFileName(_binaryFilePath)} [BINARY] - vi_text_editor";
+            return;
+        }
+
         var name = _filePath is null ? "無題" : Path.GetFileName(_filePath);
         Text = $"{(_dirty ? "*" : string.Empty)}{name} - vi_text_editor";
     }
 
     private void UpdateStatus()
     {
+        if (_binaryMode)
+        {
+            _modeLabel.Text = "BINARY";
+            _accessLabel.Text = "参照";
+            _encodingLabel.Text = "RAW bytes";
+            _eolLabel.Text = string.Empty;
+            _positionLabel.Text = _binaryViewer.StatusText;
+            return;
+        }
+
         _modeLabel.Text = _commandLine.Visible
             ? "COMMAND"
             : _vi is null || _vi.Mode == EditorMode.Normal ? "NORMAL" : "INSERT";
@@ -661,14 +769,15 @@ public sealed class MainForm : Form
     {
         MessageBox.Show(this,
             "参照モードは既定でONです。モード > 参照モード で編集可能に切り替えられます。\n\n" +
-            "NORMAL: h j k l / 0 ^ $ / w b（word）/ W B（WORD）/ Ctrl+F Ctrl+B（1画面）/ Ctrl+D Ctrl+U（半画面）\n" +
-            "CHANGE: cw / ce（word末尾まで変更）/ cW / cE（WORD末尾まで変更）/ c$（行末まで変更）\n" +
-            "DELETE: dw / de（word単位）/ dW / dE（WORD単位）/ d$ / D（行末まで）/ dd（行削除）\n" +
-            "検索: /文字列 / ?文字列 / n（同方向）/ N（逆方向）\n" +
-            "COMMAND: :e!（変更破棄で再読込）/ :e#（副ファイル）/ :q!（強制終了）/ :w [ファイル名]（保存/別名保存）\n" +
+            "NORMAL: h j k l / 0 ^ $ / w b（word）/ W B（WORD）/ Ctrl+F Ctrl+B / Ctrl+D Ctrl+U\n" +
+            "REPEAT: .（直前の変更を繰り返す。p/P, x, dd, d*, c*, i/a/o/O+入力を対象）\n" +
+            "CHANGE: cw / ce / cW / cE / c$\n" +
+            "DELETE: dw / de / dW / dE / d$ / D / dd\n" +
+            "検索: /文字列 / ?文字列 / n / N\n" +
+            "COMMAND: :e! / :e# / :q! / :w [ファイル名]\n" +
             "COMMAND: :120 / :$ / :5y a / :5,10y a / :pu a / :20pu a\n" +
+            "バイナリ: ファイル > バイナリとして開く、または表示 > バイナリモード\n" +
             "その他: gg G / x / yy / p P / u / Ctrl+R\n" +
-            "Undoでsave pointまで戻るとタイトルの * は自動的に消えます。\n" +
             "INSERT: i / a / o / O、EscでNORMALへ戻る",
             "viキーバインド", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
