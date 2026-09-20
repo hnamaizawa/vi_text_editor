@@ -1,6 +1,6 @@
 project:
   name: vi_text_editor
-  version: 0.1.12
+  version: 0.1.13
   platform: windows
   ui: winforms
   editor_component: Scintilla5.NET
@@ -60,6 +60,18 @@ non_negotiable_invariants:
   - colon_write_bang_must_allow_overwriting_existing_target
   - alternate_file_must_track_previous_current_file
   - reference_mode_must_allow_navigation_yank_set_and_search_but_block_mutating_ex_commands
+  - workspace_must_support_multiple_document_tabs_without_sharing_text_buffers
+  - workspace_ctrl_t_ctrl_w_and_ctrl_tab_must_manage_tabs
+  - recent_files_must_persist_under_user_appdata_and_deduplicate_paths
+  - files_at_or_above_64_mib_must_open_in_large_file_mode_automatically
+  - large_file_mode_must_not_read_the_entire_file_into_a_string_or_byte_array
+  - large_file_mode_must_be_read_only_and_use_sparse_line_indexing
+  - large_file_mode_must_support_j_k_ctrl_f_ctrl_b_ctrl_d_ctrl_u_gg_G_and_search
+  - large_file_mode_must_honor_set_ic_for_text_search
+  - status_bar_must_show_one_based_X_and_Y_coordinates
+  - json_formatting_must_be_undoable_and_refuse_reference_mode
+  - json_formatting_must_preserve_the_active_document_newline_style
+  - markdown_preview_must_render_in_a_separate_tab_without_modifying_source_text
   - status_position_updates_must_not_scan_entire_document_per_keypress
   - normal_vi_motion_must_use_native_position_apis_instead_of_full_document_copies
   - scintilla_layout_cache_must_cover_visible_page
