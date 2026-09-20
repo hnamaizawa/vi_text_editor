@@ -23,11 +23,13 @@ public sealed class MainForm : Form
     private ToolStripMenuItem? _redoMenuItem;
 
     private string? _filePath;
+    private string? _alternateFilePath;
     private Encoding _encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
     private string _newLine = "\r\n";
     private bool _dirty;
     private bool _loading;
     private bool _referenceMode = true;
+    private bool _forceClose;
     private char _commandPrefix;
 
     public MainForm()
@@ -154,7 +156,7 @@ public sealed class MainForm : Form
 
         var help = new ToolStripMenuItem("ヘルプ(&H)");
         help.DropDownItems.Add(new ToolStripMenuItem("viキーバインド", null, (_, _) => ShowKeyBindings()));
-        help.DropDownItems.Add(new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show(this, "vi_text_editor v0.1.7", "バージョン情報", MessageBoxButtons.OK, MessageBoxIcon.Information)));
+        help.DropDownItems.Add(new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show(this, "vi_text_editor v0.1.8", "バージョン情報", MessageBoxButtons.OK, MessageBoxIcon.Information)));
 
         menu.Items.AddRange([file, edit, mode, help]);
         return menu;
@@ -278,7 +280,7 @@ public sealed class MainForm : Form
         }
     }
 
-    private static bool IsMutatingViToken(string token) => token is "i" or "a" or "o" or "O" or "x" or "d" or "c" or "p" or "P" or "u" or "Ctrl+r";
+    private static bool IsMutatingViToken(string token) => token is "i" or "a" or "o" or "O" or "x" or "d" or "D" or "c" or "p" or "P" or "u" or "Ctrl+r";
 
     private static string? ToViToken(KeyEventArgs e)
     {
@@ -295,7 +297,7 @@ public sealed class MainForm : Form
         {
             return e.KeyCode switch
             {
-                Keys.G => "G", Keys.O => "O", Keys.P => "P", Keys.W => "W", Keys.B => "B", Keys.N => "N", Keys.D6 => "^", Keys.D4 => "$", _ => null
+                Keys.D => "D", Keys.E => "E", Keys.G => "G", Keys.O => "O", Keys.P => "P", Keys.W => "W", Keys.B => "B", Keys.N => "N", Keys.D6 => "^", Keys.D4 => "$", _ => null
             };
         }
         if (e.KeyCode == Keys.OemQuestion) return "/";
@@ -341,6 +343,17 @@ public sealed class MainForm : Form
         }
 
         var value = _commandLine.Text.Length > 1 ? _commandLine.Text[1..] : string.Empty;
+
+        if (_commandPrefix == ':' && ViExFileCommandParser.TryParse(value, out var fileCommand))
+        {
+            EndCommandInput();
+            ExecuteFileCommand(fileCommand);
+            UpdateStatus();
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+            return;
+        }
+
         var blockedMutation = _commandPrefix == ':' && _referenceMode && _commands.IsMutatingCommand(value);
         var acted = blockedMutation
             ? false
@@ -360,6 +373,29 @@ public sealed class MainForm : Form
         UpdateStatus();
         e.Handled = true;
         e.SuppressKeyPress = true;
+    }
+
+    private void ExecuteFileCommand(ViExFileCommand command)
+    {
+        switch (command.Kind)
+        {
+            case ViExFileCommandKind.ReloadForce:
+                ReloadCurrentFileForce();
+                break;
+            case ViExFileCommandKind.EditAlternate:
+                EditAlternateFile();
+                break;
+            case ViExFileCommandKind.QuitForce:
+                _forceClose = true;
+                Close();
+                break;
+            case ViExFileCommandKind.WriteCurrent:
+                SaveDocument();
+                break;
+            case ViExFileCommandKind.WriteAs:
+                SaveAsFromCommand(command.Argument);
+                break;
+        }
     }
 
     private void EndCommandInput()
@@ -400,6 +436,10 @@ public sealed class MainForm : Form
     private void NewDocument()
     {
         if (!ConfirmDiscardChanges()) return;
+        if (_filePath is not null)
+        {
+            _alternateFilePath = _filePath;
+        }
         LoadTextIntoEditor(string.Empty);
         _filePath = null;
         _encoding = new UTF8Encoding(false);
@@ -417,20 +457,60 @@ public sealed class MainForm : Form
             CheckFileExists = true
         };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        OpenFilePath(dialog.FileName, updateAlternate: true);
+    }
+
+    private bool OpenFilePath(string path, bool updateAlternate)
+    {
         try
         {
-            var loaded = TextFileService.Load(dialog.FileName);
+            var loaded = TextFileService.Load(path);
+            var previousPath = _filePath;
             LoadTextIntoEditor(loaded.Text);
-            _filePath = dialog.FileName;
+            if (updateAlternate && previousPath is not null && !PathsEqual(previousPath, path))
+            {
+                _alternateFilePath = previousPath;
+            }
+            _filePath = Path.GetFullPath(path);
             _encoding = loaded.Encoding;
             _newLine = loaded.NewLine;
             UpdateTitle();
             UpdateStatus();
+            return true;
         }
         catch (Exception ex)
         {
             MessageBox.Show(this, ex.Message, "ファイルを開けません", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return false;
         }
+    }
+
+    private void ReloadCurrentFileForce()
+    {
+        if (_filePath is null)
+        {
+            MessageBox.Show(this, "再読み込みできる現在ファイルがありません。", "vi_text_editor", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        OpenFilePath(_filePath, updateAlternate: false);
+    }
+
+    private void EditAlternateFile()
+    {
+        if (_alternateFilePath is null)
+        {
+            MessageBox.Show(this, "副ファイル（alternate file）がありません。", "vi_text_editor", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        if (!ConfirmDiscardChanges())
+        {
+            return;
+        }
+
+        var target = _alternateFilePath;
+        OpenFilePath(target, updateAlternate: true);
     }
 
     private void LoadTextIntoEditor(string text)
@@ -464,12 +544,52 @@ public sealed class MainForm : Form
         return SaveTo(dialog.FileName);
     }
 
+    private bool SaveAsFromCommand(string? rawPath)
+    {
+        if (string.IsNullOrWhiteSpace(rawPath))
+        {
+            return SaveDocument();
+        }
+
+        try
+        {
+            var pathText = rawPath.Trim();
+            if (pathText.Length >= 2 && pathText[0] == '"' && pathText[^1] == '"')
+            {
+                pathText = pathText[1..^1];
+            }
+
+            var path = Path.GetFullPath(pathText);
+            if (File.Exists(path) && !PathsEqual(_filePath, path))
+            {
+                var overwrite = MessageBox.Show(this, $"既存のファイルを上書きしますか？\n{path}", "vi_text_editor", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                if (overwrite != DialogResult.Yes)
+                {
+                    return false;
+                }
+            }
+
+            return SaveTo(path);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "保存できません", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return false;
+        }
+    }
+
     private bool SaveTo(string path)
     {
         try
         {
-            TextFileService.Save(path, _editor.Text, _encoding);
-            _filePath = path;
+            var fullPath = Path.GetFullPath(path);
+            var previousPath = _filePath;
+            TextFileService.Save(fullPath, _editor.Text, _encoding);
+            if (previousPath is not null && !PathsEqual(previousPath, fullPath))
+            {
+                _alternateFilePath = previousPath;
+            }
+            _filePath = fullPath;
             _editor.SetSavePoint();
             SetDirty(false);
             UpdateTitle();
@@ -482,6 +602,23 @@ public sealed class MainForm : Form
         }
     }
 
+    private static bool PathsEqual(string? left, string? right)
+    {
+        if (left is null || right is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
     private bool ConfirmDiscardChanges()
     {
         if (!_dirty) return true;
@@ -491,6 +628,11 @@ public sealed class MainForm : Form
 
     private void OnFormClosing(object? sender, FormClosingEventArgs e)
     {
+        if (_forceClose)
+        {
+            return;
+        }
+
         if (!ConfirmDiscardChanges()) e.Cancel = true;
     }
 
@@ -520,10 +662,12 @@ public sealed class MainForm : Form
         MessageBox.Show(this,
             "参照モードは既定でONです。モード > 参照モード で編集可能に切り替えられます。\n\n" +
             "NORMAL: h j k l / 0 ^ $ / w b（word）/ W B（WORD）/ Ctrl+F Ctrl+B（1画面）/ Ctrl+D Ctrl+U（半画面）\n" +
-            "CHANGE: cw / ce（word末尾まで変更）/ cW（WORD末尾まで変更）/ c$（行末まで変更）\n" +
+            "CHANGE: cw / ce（word末尾まで変更）/ cW / cE（WORD末尾まで変更）/ c$（行末まで変更）\n" +
+            "DELETE: dw / de（word単位）/ dW / dE（WORD単位）/ d$ / D（行末まで）/ dd（行削除）\n" +
             "検索: /文字列 / ?文字列 / n（同方向）/ N（逆方向）\n" +
-            "COMMAND: :120（120行目）/ :$（最終行）/ :5y a / :5,10y a / :pu a / :20pu a\n" +
-            "その他: e / gg G / x / dd / yy / p P / u / Ctrl+R\n" +
+            "COMMAND: :e!（変更破棄で再読込）/ :e#（副ファイル）/ :q!（強制終了）/ :w [ファイル名]（保存/別名保存）\n" +
+            "COMMAND: :120 / :$ / :5y a / :5,10y a / :pu a / :20pu a\n" +
+            "その他: gg G / x / yy / p P / u / Ctrl+R\n" +
             "Undoでsave pointまで戻るとタイトルの * は自動的に消えます。\n" +
             "INSERT: i / a / o / O、EscでNORMALへ戻る",
             "viキーバインド", MessageBoxButtons.OK, MessageBoxIcon.Information);

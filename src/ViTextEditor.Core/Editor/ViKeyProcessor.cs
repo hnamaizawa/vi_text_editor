@@ -56,6 +56,36 @@ public sealed class ViKeyProcessor
                 return true;
             }
 
+            if (pending == "d" && key == "w")
+            {
+                DeleteWordMotion(bigWord: false);
+                return true;
+            }
+
+            if (pending == "d" && key == "W")
+            {
+                DeleteWordMotion(bigWord: true);
+                return true;
+            }
+
+            if (pending == "d" && key == "e")
+            {
+                DeleteToWordEnd(bigWord: false);
+                return true;
+            }
+
+            if (pending == "d" && key == "E")
+            {
+                DeleteToWordEnd(bigWord: true);
+                return true;
+            }
+
+            if (pending == "d" && key == "$")
+            {
+                DeleteToLineEnd();
+                return true;
+            }
+
             if (pending == "y" && key == "y")
             {
                 YankCurrentLine();
@@ -68,7 +98,7 @@ public sealed class ViKeyProcessor
                 return true;
             }
 
-            if (pending == "c" && key == "W")
+            if (pending == "c" && key is "W" or "E")
             {
                 ChangeWord(bigWord: true);
                 return true;
@@ -133,6 +163,9 @@ public sealed class ViKeyProcessor
                 return true;
             case "G":
                 MoveLastLine();
+                return true;
+            case "D":
+                DeleteToLineEnd();
                 return true;
             case "g":
             case "d":
@@ -366,14 +399,7 @@ public sealed class ViKeyProcessor
             while (end < lineEnd && ClassifySmallWord(text[end]) == wordClass) end++;
         }
 
-        if (end > start)
-        {
-            _register = text.Substring(start, end - start);
-            _registerIsLinewise = false;
-            _editor.DeleteRange(start, end - start);
-            _editor.MoveCaret(start);
-        }
-
+        DeleteIntoRegister(start, end);
         SetMode(EditorMode.Insert);
     }
 
@@ -387,16 +413,108 @@ public sealed class ViKeyProcessor
         }
 
         var start = Math.Clamp(_editor.CaretPosition, 0, text.Length - 1);
-        var end = LineEndExclusive(text, start);
-        if (end > start)
+        DeleteIntoRegister(start, LineEndExclusive(text, start));
+        SetMode(EditorMode.Insert);
+    }
+
+    private void DeleteWordMotion(bool bigWord)
+    {
+        var text = _editor.Text;
+        if (text.Length == 0)
         {
-            _register = text.Substring(start, end - start);
-            _registerIsLinewise = false;
-            _editor.DeleteRange(start, end - start);
-            _editor.MoveCaret(start);
+            return;
         }
 
-        SetMode(EditorMode.Insert);
+        var start = Math.Clamp(_editor.CaretPosition, 0, text.Length - 1);
+        var lineEnd = LineEndExclusive(text, start);
+        if (start >= lineEnd)
+        {
+            return;
+        }
+
+        var end = start;
+        if (char.IsWhiteSpace(text[start]))
+        {
+            while (end < lineEnd && char.IsWhiteSpace(text[end])) end++;
+        }
+        else if (bigWord)
+        {
+            while (end < lineEnd && !char.IsWhiteSpace(text[end])) end++;
+            while (end < lineEnd && char.IsWhiteSpace(text[end])) end++;
+        }
+        else
+        {
+            var wordClass = ClassifySmallWord(text[start]);
+            while (end < lineEnd && ClassifySmallWord(text[end]) == wordClass) end++;
+            while (end < lineEnd && char.IsWhiteSpace(text[end])) end++;
+        }
+
+        DeleteIntoRegister(start, end);
+    }
+
+    private void DeleteToWordEnd(bool bigWord)
+    {
+        var text = _editor.Text;
+        if (text.Length == 0)
+        {
+            return;
+        }
+
+        var start = Math.Clamp(_editor.CaretPosition, 0, text.Length - 1);
+        var lineEnd = LineEndExclusive(text, start);
+        if (start >= lineEnd)
+        {
+            return;
+        }
+
+        var end = start;
+        while (end < lineEnd && char.IsWhiteSpace(text[end])) end++;
+        if (end >= lineEnd)
+        {
+            DeleteIntoRegister(start, lineEnd);
+            return;
+        }
+
+        if (bigWord)
+        {
+            while (end < lineEnd && !char.IsWhiteSpace(text[end])) end++;
+        }
+        else
+        {
+            var wordClass = ClassifySmallWord(text[end]);
+            while (end < lineEnd && ClassifySmallWord(text[end]) == wordClass) end++;
+        }
+
+        DeleteIntoRegister(start, end);
+    }
+
+    private void DeleteToLineEnd()
+    {
+        var text = _editor.Text;
+        if (text.Length == 0)
+        {
+            return;
+        }
+
+        var start = Math.Clamp(_editor.CaretPosition, 0, text.Length - 1);
+        DeleteIntoRegister(start, LineEndExclusive(text, start));
+    }
+
+    private void DeleteIntoRegister(int start, int end)
+    {
+        var text = _editor.Text;
+        start = Math.Clamp(start, 0, text.Length);
+        end = Math.Clamp(end, start, text.Length);
+        if (end <= start)
+        {
+            return;
+        }
+
+        _register = text.Substring(start, end - start);
+        _registerIsLinewise = false;
+        _editor.DeleteRange(start, end - start);
+        var remaining = _editor.Text.Length;
+        _editor.MoveCaret(remaining == 0 ? 0 : Math.Min(start, remaining - 1));
     }
 
     private void DeleteCharacter()

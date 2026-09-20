@@ -112,6 +112,69 @@ public sealed class ViKeyProcessorTests
     }
 
     [Fact]
+    public void DwDeletesWordAndFollowingSpaceWithoutEnteringInsertMode()
+    {
+        var (editor, vi) = Create("alpha beta", 0);
+
+        vi.Handle("d");
+        vi.Handle("w");
+
+        Assert.Equal("beta", editor.Text);
+        Assert.Equal(0, editor.CaretPosition);
+        Assert.Equal(EditorMode.Normal, vi.Mode);
+    }
+
+    [Fact]
+    public void DWDeletesWhitespaceSeparatedWordAndFollowingSpace()
+    {
+        var (editor, vi) = Create("foo-bar baz", 0);
+
+        vi.Handle("d");
+        vi.Handle("W");
+
+        Assert.Equal("baz", editor.Text);
+        Assert.Equal(EditorMode.Normal, vi.Mode);
+    }
+
+    [Fact]
+    public void DwDoesNotDeleteLineBreakAtEndOfLine()
+    {
+        var (editor, vi) = Create("alpha\nbeta", 0);
+
+        vi.Handle("d");
+        vi.Handle("w");
+
+        Assert.Equal("\nbeta", editor.Text);
+    }
+
+    [Fact]
+    public void DeAndDEDeleteToWordEnd()
+    {
+        var (smallEditor, smallVi) = Create("alpha beta", 2);
+        smallVi.Handle("d");
+        smallVi.Handle("e");
+        Assert.Equal("al beta", smallEditor.Text);
+
+        var (bigEditor, bigVi) = Create("foo-bar baz", 0);
+        bigVi.Handle("d");
+        bigVi.Handle("E");
+        Assert.Equal(" baz", bigEditor.Text);
+    }
+
+    [Fact]
+    public void DAndDDollarDeleteToEndOfLine()
+    {
+        var (editor1, vi1) = Create("one two\nthree", 4);
+        vi1.Handle("D");
+        Assert.Equal("one \nthree", editor1.Text);
+
+        var (editor2, vi2) = Create("one two\nthree", 4);
+        vi2.Handle("d");
+        vi2.Handle("$");
+        Assert.Equal("one \nthree", editor2.Text);
+    }
+
+    [Fact]
     public void DdDeletesCurrentLine()
     {
         var (editor, vi) = Create("one\ntwo\nthree", 5);
