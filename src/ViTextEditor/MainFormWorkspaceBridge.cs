@@ -142,9 +142,9 @@ internal static class MainFormWorkspaceBridge
         var help = menu.Items.OfType<ToolStripMenuItem>().FirstOrDefault(item => item.Text.Contains("ヘルプ", StringComparison.Ordinal));
         if (help is null) return;
         ReplaceMenuItem(help, item => item.Text.Contains("バージョン情報", StringComparison.Ordinal),
-            new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show("vi_text_editor v0.1.14\nDisposed-control crash fix / X-Y cursor coordinates", "バージョン情報", MessageBoxButtons.OK, MessageBoxIcon.Information)));
-        help.DropDownItems.Add(new ToolStripMenuItem("v0.1.14 ワークスペース操作", null, (_, _) => MessageBox.Show(
-            "Ctrl+T: 新しいタブ\nCtrl+W: タブを閉じる\nCtrl+Tab: 次のタブ\nCtrl+Shift+Tab: 前のタブ\n\n右下: X=桁 / Y=行（1始まり）\n64MiB以上のテキストはLarge Fileモードでストリーミング表示します。\nJSON整形: Ctrl+Shift+J\nMarkdownプレビュー: Ctrl+Shift+M",
+            new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show("vi_text_editor v0.1.15\nPinned X/Y coordinates / extension syntax highlighting", "バージョン情報", MessageBoxButtons.OK, MessageBoxIcon.Information)));
+        help.DropDownItems.Add(new ToolStripMenuItem("v0.1.15 ワークスペース操作", null, (_, _) => MessageBox.Show(
+            "Ctrl+T: 新しいタブ\nCtrl+W: タブを閉じる\nCtrl+Tab: 次のタブ\nCtrl+Shift+Tab: 前のタブ\n\n右下: X=桁 / Y=行（1始まり）\n拡張子に応じて Markdown / JSON / XML / C# / Python / JavaScript / TypeScript / YAML を強調表示します。\n64MiB以上のテキストはLarge Fileモードでストリーミング表示します。\nJSON整形: Ctrl+Shift+J\nMarkdownプレビュー: Ctrl+Shift+M",
             "ワークスペース操作", MessageBoxButtons.OK, MessageBoxIcon.Information)));
     }
 
@@ -152,11 +152,26 @@ internal static class MainFormWorkspaceBridge
     {
         var editor = GetEditor(form);
         var status = FindControls<StatusStrip>(form).FirstOrDefault();
-        var position = status?.Items.OfType<ToolStripStatusLabel>().LastOrDefault();
-        if (editor is null || position is null) return;
+        var labels = status?.Items.OfType<ToolStripStatusLabel>().ToList();
+        var position = labels?.LastOrDefault();
+        if (editor is null || status is null || labels is null || labels.Count < 5 || position is null) return;
+
+        // v0.1.14 left the encoding label as Spring=true. On a narrow embedded tab this could
+        // consume the remaining width and put the final position label into overflow. Reserve
+        // the expandable space explicitly before the encoding/EOL/coordinate group instead.
+        foreach (var label in labels) label.Spring = false;
+        var spacer = new ToolStripStatusLabel
+        {
+            Name = "CoordinateSpacer",
+            Spring = true,
+            Text = string.Empty
+        };
+        var rightGroupIndex = Math.Max(0, status.Items.IndexOf(labels[2]));
+        status.Items.Insert(rightGroupIndex, spacer);
 
         position.AutoSize = false;
-        position.Width = 170;
+        position.Width = 180;
+        position.Alignment = ToolStripItemAlignment.Right;
         position.TextAlign = ContentAlignment.MiddleRight;
         position.ToolTipText = "X: 1始まりの桁位置 / Y: 1始まりの行番号";
 
@@ -176,12 +191,13 @@ internal static class MainFormWorkspaceBridge
                 {
                     lastPath = path;
                     workspace.NotifyEditorPathChanged(form, path);
+                    SyntaxHighlightingService.Apply(editor, path);
                 }
             }
             catch (ObjectDisposedException)
             {
                 // A child editor can be in the final WinForms disposal phase while a queued UI event remains.
-                // Do not let a status refresh turn a normal tab close into a JIT exception.
+                // Do not let a status/syntax refresh turn a normal tab close into a JIT exception.
             }
         }
 
