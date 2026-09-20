@@ -3,16 +3,16 @@ namespace ViTextEditor.Core.Editor;
 public sealed class ViKeyProcessor
 {
     private readonly IEditorAdapter _editor;
+    private readonly ViRegisterStore _registers;
     private string? _pending;
-    private string _register = string.Empty;
-    private bool _registerIsLinewise;
     private RepeatState? _lastRepeat;
     private PendingInsertRepeat? _pendingInsertRepeat;
     private bool _isRepeating;
 
-    public ViKeyProcessor(IEditorAdapter editor)
+    public ViKeyProcessor(IEditorAdapter editor, ViRegisterStore? registers = null)
     {
         _editor = editor;
+        _registers = registers ?? new ViRegisterStore();
     }
 
     public EditorMode Mode { get; private set; } = EditorMode.Normal;
@@ -538,8 +538,7 @@ public sealed class ViKeyProcessor
         end = Math.Clamp(end, start, length);
         if (end <= start) return false;
 
-        _register = _editor.GetTextRange(start, end - start);
-        _registerIsLinewise = false;
+        _registers.StoreText(null, _editor.GetTextRange(start, end - start), linewise: false);
         _editor.DeleteRange(start, end - start);
         var remaining = _editor.TextLength;
         _editor.MoveCaret(remaining == 0 ? 0 : Math.Min(start, remaining - 1));
@@ -551,8 +550,7 @@ public sealed class ViKeyProcessor
         if (_editor.TextLength == 0) return false;
         var position = Math.Clamp(_editor.CaretPosition, 0, _editor.TextLength - 1);
         var length = _editor.CharAt(position) == '\r' && position + 1 < _editor.TextLength && _editor.CharAt(position + 1) == '\n' ? 2 : 1;
-        _register = _editor.GetTextRange(position, Math.Min(length, _editor.TextLength - position));
-        _registerIsLinewise = false;
+        _registers.StoreText(null, _editor.GetTextRange(position, Math.Min(length, _editor.TextLength - position)), linewise: false);
         _editor.DeleteRange(position, Math.Min(length, _editor.TextLength - position));
         var remaining = _editor.TextLength;
         _editor.MoveCaret(remaining == 0 ? 0 : Math.Min(position, remaining - 1));
@@ -565,8 +563,7 @@ public sealed class ViKeyProcessor
         var current = Math.Clamp(_editor.CaretPosition, 0, _editor.TextLength - 1);
         var start = _editor.LineStart(current);
         var contentEnd = _editor.LineEndExclusive(current);
-        _register = _editor.GetTextRange(start, Math.Max(0, contentEnd - start));
-        _registerIsLinewise = true;
+        _registers.Yank(null, [_editor.GetTextRange(start, Math.Max(0, contentEnd - start))]);
 
         var afterBreak = SkipLineBreak(contentEnd);
         int deleteStart;
@@ -598,39 +595,40 @@ public sealed class ViKeyProcessor
     {
         if (_editor.TextLength == 0)
         {
-            _register = string.Empty;
-            _registerIsLinewise = true;
+            _registers.Yank(null, [string.Empty]);
             return;
         }
         var start = _editor.LineStart(_editor.CaretPosition);
         var end = _editor.LineEndExclusive(_editor.CaretPosition);
-        _register = _editor.GetTextRange(start, Math.Max(0, end - start));
-        _registerIsLinewise = true;
+        _registers.Yank(null, [_editor.GetTextRange(start, Math.Max(0, end - start))]);
     }
 
     private bool Paste(bool after)
     {
-        if (_register.Length == 0) return false;
-        if (_registerIsLinewise)
+        if (!_registers.TryGetContent(null, out var register) || register.Parts.Count == 0) return false;
+
+        var payload = register.ToText(DetectNewLine());
+        if (payload.Length == 0 && !register.IsLinewise) return false;
+        if (register.IsLinewise)
         {
-            PasteLinewise(after);
+            PasteLinewise(after, payload);
             return true;
         }
 
         var insertAt = _editor.TextLength == 0
             ? 0
             : after ? Math.Min(_editor.CaretPosition + 1, _editor.TextLength) : Math.Min(_editor.CaretPosition, _editor.TextLength);
-        _editor.InsertText(insertAt, _register);
+        _editor.InsertText(insertAt, payload);
         _editor.MoveCaret(Math.Min(insertAt, Math.Max(0, _editor.TextLength - 1)));
         return true;
     }
 
-    private void PasteLinewise(bool after)
+    private void PasteLinewise(bool after, string payload)
     {
         var newlineText = DetectNewLine();
         if (_editor.TextLength == 0)
         {
-            _editor.InsertText(0, _register);
+            _editor.InsertText(0, payload);
             _editor.MoveCaret(0);
             return;
         }
@@ -638,7 +636,7 @@ public sealed class ViKeyProcessor
         var start = _editor.LineStart(_editor.CaretPosition);
         if (!after)
         {
-            _editor.InsertText(start, _register + newlineText);
+            _editor.InsertText(start, payload + newlineText);
             _editor.MoveCaret(start);
             return;
         }
@@ -647,13 +645,13 @@ public sealed class ViKeyProcessor
         var afterBreak = SkipLineBreak(end);
         if (afterBreak > end)
         {
-            _editor.InsertText(afterBreak, _register + newlineText);
+            _editor.InsertText(afterBreak, payload + newlineText);
             _editor.MoveCaret(afterBreak);
         }
         else
         {
             var insertAt = _editor.TextLength;
-            _editor.InsertText(insertAt, newlineText + _register);
+            _editor.InsertText(insertAt, newlineText + payload);
             _editor.MoveCaret(insertAt + newlineText.Length);
         }
     }
