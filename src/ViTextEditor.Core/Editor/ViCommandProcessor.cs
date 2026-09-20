@@ -22,7 +22,7 @@ public sealed class ViCommandProcessor
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
     private static readonly Regex SubstitutePrefixPattern = new(
-        @"^(?<range>%|(?:[.$]|\d+)(?:\s*,\s*(?:[.$]|\d+))?)?\s*(?<command>s|substitute)(?<rest>.*)$",
+        @"^(?<range>%|(?:[.$]|\d+)(?:\s*,\s*(?:[.$]|\d+))?)?\s*(?<command>s|substitute)(?![A-Za-z])(?<rest>.*)$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
     private readonly IEditorAdapter _editor;
@@ -134,6 +134,7 @@ public sealed class ViCommandProcessor
     public bool IsMutatingCommand(string command)
     {
         var trimmed = command.Trim();
+        if (IsOptionCommand(trimmed)) return false;
         if (SubstitutePrefixPattern.IsMatch(trimmed) || DeletePattern.IsMatch(trimmed) || trimmed == "&") return true;
         var match = CommandPattern.Match(trimmed);
         return match.Success && IsPutCommand(match.Groups["command"].Value);
