@@ -9,6 +9,7 @@ public sealed class MainForm : Form
 {
     private const int SciSetLayoutCache = 2272;
     private const int ScCachePage = 2;
+    private const int MaxCommandHistory = 200;
 
     private readonly Scintilla _editor = new();
     private readonly BinaryViewerControl _binaryViewer = new();
@@ -20,6 +21,8 @@ public sealed class MainForm : Form
     private readonly ToolStripStatusLabel _positionLabel = new();
     private readonly List<ViRepeatEdit> _insertRepeatEdits = [];
     private readonly ViRegisterStore _registers = new();
+    private readonly List<string> _commandHistory = [];
+    private readonly List<string> _searchHistory = [];
     private readonly ViKeyProcessor _vi;
     private readonly ViNavigationProcessor _navigation;
     private readonly ViSearchProcessor _search;
@@ -44,6 +47,9 @@ public sealed class MainForm : Form
     private int _insertRepeatAnchor;
     private EditorMode _lastViMode = EditorMode.Normal;
     private char _commandPrefix;
+    private int _historyIndex;
+    private string _historyPrefix = string.Empty;
+    private string? _commandFeedback;
 
     public MainForm()
     {
@@ -69,6 +75,7 @@ public sealed class MainForm : Form
         _editor.SavePointReached += EditorOnSavePointReached;
 
         _binaryViewer.SearchInputRequested += forward => BeginCommandInput(forward ? '/' : '?');
+        _binaryViewer.ExInputRequested += () => BeginCommandInput(':');
         _binaryViewer.StatusChanged += (_, _) => UpdateStatus();
 
         ConfigureCommandLine();
@@ -179,7 +186,7 @@ public sealed class MainForm : Form
 
         var help = new ToolStripMenuItem("ヘルプ(&H)");
         help.DropDownItems.Add(new ToolStripMenuItem("viキーバインド", null, (_, _) => ShowKeyBindings()));
-        help.DropDownItems.Add(new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show(this, "vi_text_editor v0.1.11", "バージョン情報", MessageBoxButtons.OK, MessageBoxIcon.Information)));
+        help.DropDownItems.Add(new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show(this, "vi_text_editor v0.1.12", "バージョン情報", MessageBoxButtons.OK, MessageBoxIcon.Information)));
 
         menu.Items.AddRange([file, edit, mode, view, help]);
         return menu;
@@ -189,7 +196,7 @@ public sealed class MainForm : Form
     {
         var status = new StatusStrip();
         _modeLabel.AutoSize = false;
-        _modeLabel.Width = 110;
+        _modeLabel.Width = 120;
         _accessLabel.AutoSize = false;
         _accessLabel.Width = 90;
         _encodingLabel.Spring = true;
@@ -449,13 +456,16 @@ public sealed class MainForm : Form
 
     private void BeginCommandInput(char prefix)
     {
-        if (_binaryMode && prefix == ':') return;
         _commandPrefix = prefix;
         _commandLine.Text = prefix.ToString();
         _commandLine.Visible = true;
         _commandLine.BringToFront();
         _commandLine.Focus();
         _commandLine.SelectionStart = _commandLine.TextLength;
+        var history = GetCurrentHistory();
+        _historyIndex = history.Count;
+        _historyPrefix = string.Empty;
+        _commandFeedback = null;
         UpdateStatus();
     }
 
@@ -464,6 +474,14 @@ public sealed class MainForm : Form
         if (e.KeyCode == Keys.Escape)
         {
             EndCommandInput();
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+            return;
+        }
+
+        if (e.KeyCode is Keys.Up or Keys.Down)
+        {
+            NavigateHistory(e.KeyCode == Keys.Up ? -1 : 1);
             e.Handled = true;
             e.SuppressKeyPress = true;
             return;
@@ -479,6 +497,8 @@ public sealed class MainForm : Form
         if (e.KeyCode != Keys.Enter) return;
 
         var value = _commandLine.Text.Length > 1 ? _commandLine.Text[1..] : string.Empty;
+        AddHistory(value);
+
         if (_binaryMode && _commandPrefix is '/' or '?')
         {
             _binaryViewer.Search(value, forward: _commandPrefix == '/');
@@ -494,6 +514,21 @@ public sealed class MainForm : Form
             EndCommandInput();
             ExecuteFileCommand(fileCommand);
             UpdateStatus();
+            ShowCommandFeedback();
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+            return;
+        }
+
+        if (_binaryMode && _commandPrefix == ':')
+        {
+            var actedBinary = _commands.IsOptionCommand(value) && _commands.Execute(value);
+            if (!actedBinary && !_commands.IsOptionCommand(value)) _commandFeedback = "BINARY: :set options and file commands only";
+            else _commandFeedback = _commands.LastMessage;
+            _binaryViewer.OptionsChanged();
+            EndCommandInput();
+            UpdateStatus();
+            ShowCommandFeedback();
             e.Handled = true;
             e.SuppressKeyPress = true;
             return;
@@ -510,34 +545,191 @@ public sealed class MainForm : Form
                 _ => false
             };
 
+        if (blockedMutation) _commandFeedback = "参照モードでは変更コマンドを実行できません";
+        else if (_commandPrefix == ':') _commandFeedback = _commands.LastMessage;
+
         EndCommandInput();
         if (acted) _editor.ScrollCaret();
         UpdateStatus();
+        ShowCommandFeedback();
         e.Handled = true;
         e.SuppressKeyPress = true;
     }
 
+    private List<string> GetCurrentHistory() => _commandPrefix == ':' ? _commandHistory : _searchHistory;
+
+    private void AddHistory(string value)
+    {
+        if (string.IsNullOrEmpty(value)) return;
+        var history = GetCurrentHistory();
+        history.RemoveAll(item => string.Equals(item, value, StringComparison.Ordinal));
+        history.Add(value);
+        if (history.Count > MaxCommandHistory) history.RemoveAt(0);
+        _historyIndex = history.Count;
+        _historyPrefix = string.Empty;
+    }
+
+    private void NavigateHistory(int direction)
+    {
+        var history = GetCurrentHistory();
+        if (history.Count == 0) return;
+        if (_historyPrefix.Length == 0 && _historyIndex == history.Count)
+        {
+            _historyPrefix = _commandLine.Text.Length > 1 ? _commandLine.Text[1..] : string.Empty;
+        }
+
+        var index = _historyIndex;
+        while (true)
+        {
+            index += direction;
+            if (index < 0 || index >= history.Count)
+            {
+                if (direction > 0 && index >= history.Count)
+                {
+                    _historyIndex = history.Count;
+                    _commandLine.Text = _commandPrefix + _historyPrefix;
+                    _commandLine.SelectionStart = _commandLine.TextLength;
+                }
+                return;
+            }
+
+            if (history[index].StartsWith(_historyPrefix, StringComparison.Ordinal))
+            {
+                _historyIndex = index;
+                _commandLine.Text = _commandPrefix + history[index];
+                _commandLine.SelectionStart = _commandLine.TextLength;
+                return;
+            }
+        }
+    }
+
     private void ExecuteFileCommand(ViExFileCommand command)
     {
+        _commandFeedback = null;
         switch (command.Kind)
         {
             case ViExFileCommandKind.ReloadForce:
-                ReloadCurrentFileForce();
+                if (_binaryMode) _binaryViewer.RefreshCurrentFile();
+                else ReloadCurrentFileForce();
                 break;
             case ViExFileCommandKind.EditAlternate:
                 EditAlternateFile();
                 break;
+            case ViExFileCommandKind.Edit:
+                EditFileFromCommand(command.Argument, force: false);
+                break;
+            case ViExFileCommandKind.EditForce:
+                EditFileFromCommand(command.Argument, force: true);
+                break;
+            case ViExFileCommandKind.Quit:
+                QuitFromCommand(force: false);
+                break;
             case ViExFileCommandKind.QuitForce:
-                _forceClose = true;
-                Close();
+                QuitFromCommand(force: true);
                 break;
             case ViExFileCommandKind.WriteCurrent:
-                SaveDocument();
+            case ViExFileCommandKind.WriteCurrentForce:
+                if (_binaryMode) _commandFeedback = "E382: Cannot write, 'buftype' option is set";
+                else SaveDocument();
                 break;
-            case ViExFileCommandKind.WriteAs:
-                SaveAsFromCommand(command.Argument);
+            case ViExFileCommandKind.WriteFile:
+                WriteCopyFromCommand(command.Argument, force: false);
+                break;
+            case ViExFileCommandKind.WriteFileForce:
+                WriteCopyFromCommand(command.Argument, force: true);
+                break;
+            case ViExFileCommandKind.WriteQuit:
+                WriteQuitFromCommand(command.Argument, force: false);
+                break;
+            case ViExFileCommandKind.WriteQuitForce:
+                WriteQuitFromCommand(command.Argument, force: true);
+                break;
+            case ViExFileCommandKind.Xit:
+                XitFromCommand(command.Argument, force: false);
+                break;
+            case ViExFileCommandKind.XitForce:
+                XitFromCommand(command.Argument, force: true);
+                break;
+            case ViExFileCommandKind.SaveAs:
+                SaveAsFromCommand(command.Argument, force: false);
+                break;
+            case ViExFileCommandKind.SaveAsForce:
+                SaveAsFromCommand(command.Argument, force: true);
                 break;
         }
+    }
+
+    private void QuitFromCommand(bool force)
+    {
+        if (force)
+        {
+            _forceClose = true;
+            Close();
+            return;
+        }
+        if (_dirty)
+        {
+            _commandFeedback = "E37: No write since last change (add ! to override)";
+            return;
+        }
+        _forceClose = true;
+        Close();
+    }
+
+    private void EditFileFromCommand(string? rawPath, bool force)
+    {
+        if (string.IsNullOrWhiteSpace(rawPath))
+        {
+            if (force) ReloadCurrentFileForce();
+            else _commandFeedback = _filePath is null ? "E32: No file name" : Path.GetFileName(_filePath);
+            return;
+        }
+        if (!force && _dirty)
+        {
+            _commandFeedback = "E37: No write since last change (add ! to override)";
+            return;
+        }
+
+        var path = ResolveCommandPath(rawPath);
+        if (path is null) return;
+        if (_binaryMode)
+        {
+            SetBinaryMenuChecked(false);
+            LeaveBinaryMode();
+        }
+        OpenFilePath(path, updateAlternate: true);
+    }
+
+    private void WriteQuitFromCommand(string? rawPath, bool force)
+    {
+        if (_binaryMode)
+        {
+            _commandFeedback = "E382: Cannot write binary view";
+            return;
+        }
+        var saved = string.IsNullOrWhiteSpace(rawPath)
+            ? SaveDocument()
+            : WriteCopyFromCommand(rawPath, force);
+        if (!saved) return;
+        _forceClose = true;
+        Close();
+    }
+
+    private void XitFromCommand(string? rawPath, bool force)
+    {
+        if (_binaryMode)
+        {
+            _forceClose = true;
+            Close();
+            return;
+        }
+        if (!_dirty && string.IsNullOrWhiteSpace(rawPath))
+        {
+            _forceClose = true;
+            Close();
+            return;
+        }
+        WriteQuitFromCommand(rawPath, force);
     }
 
     private void EndCommandInput()
@@ -547,6 +739,13 @@ public sealed class MainForm : Form
         if (_binaryMode) _binaryViewer.FocusViewer();
         else _editor.Focus();
         UpdateStatus();
+    }
+
+    private void ShowCommandFeedback()
+    {
+        if (string.IsNullOrWhiteSpace(_commandFeedback)) return;
+        _positionLabel.Text = _commandFeedback;
+        _commandFeedback = null;
     }
 
     private void EditorOnSavePointLeft(object? sender, EventArgs e)
@@ -626,7 +825,7 @@ public sealed class MainForm : Form
     {
         if (_filePath is null)
         {
-            MessageBox.Show(this, "再読み込みできる現在ファイルがありません。", "vi_text_editor", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            _commandFeedback = "E32: No file name";
             return;
         }
         OpenFilePath(_filePath, updateAlternate: false);
@@ -636,10 +835,19 @@ public sealed class MainForm : Form
     {
         if (_alternateFilePath is null)
         {
-            MessageBox.Show(this, "副ファイル（alternate file）がありません。", "vi_text_editor", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            _commandFeedback = "E23: No alternate file";
             return;
         }
-        if (!ConfirmDiscardChanges()) return;
+        if (_dirty)
+        {
+            _commandFeedback = "E37: No write since last change (add ! to override)";
+            return;
+        }
+        if (_binaryMode)
+        {
+            SetBinaryMenuChecked(false);
+            LeaveBinaryMode();
+        }
         OpenFilePath(_alternateFilePath, updateAlternate: true);
     }
 
@@ -676,25 +884,67 @@ public sealed class MainForm : Form
         return SaveTo(dialog.FileName);
     }
 
-    private bool SaveAsFromCommand(string? rawPath)
+    private bool SaveAsFromCommand(string? rawPath, bool force)
     {
+        if (string.IsNullOrWhiteSpace(rawPath))
+        {
+            _commandFeedback = "E471: Argument required";
+            return false;
+        }
+        var path = ResolveCommandPath(rawPath);
+        if (path is null) return false;
+        if (File.Exists(path) && !PathsEqual(_filePath, path) && !force)
+        {
+            _commandFeedback = $"E13: File exists (add ! to override): {path}";
+            return false;
+        }
+        return SaveTo(path);
+    }
+
+    private bool WriteCopyFromCommand(string? rawPath, bool force)
+    {
+        if (_binaryMode)
+        {
+            _commandFeedback = "E382: Cannot write binary view";
+            return false;
+        }
         if (string.IsNullOrWhiteSpace(rawPath)) return SaveDocument();
+
+        var path = ResolveCommandPath(rawPath);
+        if (path is null) return false;
+        if (PathsEqual(_filePath, path)) return SaveTo(path);
+        if (File.Exists(path) && !force)
+        {
+            _commandFeedback = $"E13: File exists (add ! to override): {path}";
+            return false;
+        }
+
+        try
+        {
+            TextFileService.Save(path, _editor.Text, _encoding);
+            _alternateFilePath = path;
+            _commandFeedback = $"written: {path}";
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _commandFeedback = ex.Message;
+            return false;
+        }
+    }
+
+    private string? ResolveCommandPath(string rawPath)
+    {
         try
         {
             var pathText = rawPath.Trim();
             if (pathText.Length >= 2 && pathText[0] == '"' && pathText[^1] == '"') pathText = pathText[1..^1];
-            var path = Path.GetFullPath(pathText);
-            if (File.Exists(path) && !PathsEqual(_filePath, path))
-            {
-                var overwrite = MessageBox.Show(this, $"既存のファイルを上書きしますか？\n{path}", "vi_text_editor", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-                if (overwrite != DialogResult.Yes) return false;
-            }
-            return SaveTo(path);
+            return Path.GetFullPath(pathText);
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, ex.Message, "保存できません", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            return false;
+            _commandFeedback = ex.Message;
+            return null;
         }
     }
 
@@ -715,7 +965,7 @@ public sealed class MainForm : Form
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, ex.Message, "保存できません", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            _commandFeedback = ex.Message;
             return false;
         }
     }
@@ -754,11 +1004,14 @@ public sealed class MainForm : Form
 
     private void UpdateStatus()
     {
+        var ignoreCaseSuffix = ViOptions.Shared.IgnoreCase ? " IC" : string.Empty;
         if (_binaryMode)
         {
-            _modeLabel.Text = _commandLine.Visible ? "BINARY SEARCH" : "BINARY";
+            _modeLabel.Text = _commandLine.Visible
+                ? _commandPrefix == ':' ? "BINARY COMMAND" : "BINARY SEARCH"
+                : "BINARY";
             _accessLabel.Text = "参照";
-            _encodingLabel.Text = "RAW bytes";
+            _encodingLabel.Text = $"RAW bytes{ignoreCaseSuffix}";
             _eolLabel.Text = string.Empty;
             _positionLabel.Text = _binaryViewer.StatusText;
             return;
@@ -768,7 +1021,7 @@ public sealed class MainForm : Form
             ? "COMMAND"
             : _vi is null || _vi.Mode == EditorMode.Normal ? "NORMAL" : "INSERT";
         _accessLabel.Text = _referenceMode ? "参照" : "編集";
-        _encodingLabel.Text = _encoding.WebName;
+        _encodingLabel.Text = _encoding.WebName + ignoreCaseSuffix;
         _eolLabel.Text = _newLine switch { "\r\n" => "CRLF", "\n" => "LF", "\r" => "CR", _ => "EOL" };
 
         var position = Math.Clamp(_editor.CurrentPosition, 0, _editor.TextLength);
@@ -783,14 +1036,14 @@ public sealed class MainForm : Form
             "参照モードは既定でONです。モード > 参照モード で編集可能に切り替えられます。\n\n" +
             "NORMAL: h j k l / 0 ^ $ / w b（word）/ W B（WORD）/ Ctrl+F Ctrl+B / Ctrl+D Ctrl+U\n" +
             "REPEAT: .（直前の変更を繰り返す。p/P, x, dd, d*, c*, i/a/o/O+入力を対象）\n" +
-            "CHANGE: cw / ce / cW / cE / c$\n" +
-            "DELETE: dw / de / dW / dE / d$ / D / dd\n" +
-            "検索: /文字列 / ?文字列 / n / N\n" +
-            "COMMAND: :e! / :e# / :q! / :w [ファイル名]\n" +
+            "検索: /文字列 / ?文字列 / n / N。:set ic / :set noic で大文字小文字判定を切替\n" +
+            "COMMAND: :q / :q! / :w / :w! / :wq / :x / :e file / :e! / :e# / :saveas file\n" +
+            "COMMAND: :set ic / :set noic / :set ic? / :%s/old/new/g / :2,5d\n" +
             "COMMAND: :y3 / :y a 3 / :5y a / :5,10y a / :pu a / :20pu a\n" +
+            "履歴: : / / / ? の入力中に ↑/↓ で同種の履歴を再利用\n" +
             "レジスタ: COMMANDのyankとNORMALのyy/dd/dw/x/p/Pは同じ無名レジスタを共有\n" +
-            "バイナリ移動: j/k（J/Kも可）/ Ctrl+F Ctrl+B / Ctrl+D Ctrl+U / gg / G\n" +
-            "バイナリ検索: /文字列 / ?文字列 / n / N。RAW検索は /hex:4D 5A の形式\n" +
+            "バイナリ: :set ic / :set noic、j/k、Ctrl+F/B、Ctrl+D/U、gg/G、/ ? n N\n" +
+            "バイナリRAW検索: /hex:4D 5A の形式（RAW HEXはignorecase対象外）\n" +
             "その他: gg G / x / yy / p P / u / Ctrl+R\n" +
             "INSERT: i / a / o / O、EscでNORMALへ戻る",
             "viキーバインド", MessageBoxButtons.OK, MessageBoxIcon.Information);
