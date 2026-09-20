@@ -1,6 +1,6 @@
 project:
   name: vi_text_editor
-  version: 0.1.4
+  version: 0.1.6
   platform: windows
   ui: winforms
   editor_component: Scintilla5.NET
@@ -21,8 +21,18 @@ non_negotiable_invariants:
   - ime_composition_must_track_editor_caret
   - escape_must_return_to_normal_mode
   - vi_commands_must_not_corrupt_document_text
+  - caret_motion_must_move_to_first_nonblank_character
   - vi_word_and_WORD_motions_must_remain_distinct
-  - ctrl_f_and_ctrl_b_must_page_scroll_in_normal_mode
+  - ctrl_f_and_ctrl_b_must_move_one_page_with_caret_following
+  - ctrl_d_and_ctrl_u_must_move_half_page_with_caret_following
+  - slash_and_question_search_must_support_n_and_N_repeat
+  - colon_command_mode_must_be_visible_and_escape_cancelable
+  - colon_numeric_command_must_jump_to_requested_line
+  - colon_yank_must_support_single_lines_ranges_and_named_registers
+  - colon_put_must_support_named_registers_and_target_lines
+  - uppercase_named_register_yank_must_append_to_lowercase_register
+  - reference_mode_must_allow_navigation_and_yank_but_block_put
+  - status_position_updates_must_not_scan_entire_document_per_keypress
   - normal_mode_caret_must_be_visually_distinct
   - editor_font_must_prefer_japanese_monospaced_font
   - reference_mode_must_be_enabled_by_default

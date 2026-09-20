@@ -57,14 +57,25 @@ public sealed class ViNavigationProcessorTests
     }
 
     [Fact]
-    public void CtrlFAndCtrlBDelegatePageScrolling()
+    public void CtrlFAndCtrlBDelegateFullPageScrolling()
     {
         var (editor, navigation) = Create("one\ntwo\nthree");
 
         Assert.True(navigation.Handle("Ctrl+f"));
         Assert.True(navigation.Handle("Ctrl+b"));
 
-        Assert.Equal(new[] { 1, -1 }, editor.ScrollDirections);
+        Assert.Equal(new[] { 1, -1 }, editor.FullPageScrollDirections);
+    }
+
+    [Fact]
+    public void CtrlDAndCtrlUDelegateHalfPageScrolling()
+    {
+        var (editor, navigation) = Create("one\ntwo\nthree");
+
+        Assert.True(navigation.Handle("Ctrl+d"));
+        Assert.True(navigation.Handle("Ctrl+u"));
+
+        Assert.Equal(new[] { 1, -1 }, editor.HalfPageScrollDirections);
     }
 
     private static (FakeEditor Editor, ViNavigationProcessor Navigation) Create(string text, int caret = 0)
@@ -85,7 +96,8 @@ public sealed class ViNavigationProcessorTests
 
         public string Text => _text;
         public int CaretPosition { get; private set; }
-        public List<int> ScrollDirections { get; } = [];
+        public List<int> FullPageScrollDirections { get; } = [];
+        public List<int> HalfPageScrollDirections { get; } = [];
 
         public void MoveCaret(int position) => CaretPosition = Math.Clamp(position, 0, _text.Length);
 
@@ -112,6 +124,7 @@ public sealed class ViNavigationProcessorTests
         {
         }
 
-        public void ScrollPage(int direction) => ScrollDirections.Add(direction);
+        public void ScrollPage(int direction) => FullPageScrollDirections.Add(direction);
+        public void ScrollHalfPage(int direction) => HalfPageScrollDirections.Add(direction);
     }
 }

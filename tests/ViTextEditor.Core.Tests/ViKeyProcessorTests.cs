@@ -41,6 +41,15 @@ public sealed class ViKeyProcessorTests
     }
 
     [Fact]
+    public void CaretMovesToFirstNonBlankCharacterOfCurrentLine()
+    {
+        var (editor, vi) = Create("one\n    two\nthree", 10);
+
+        Assert.True(vi.Handle("^"));
+        Assert.Equal(8, editor.CaretPosition);
+    }
+
+    [Fact]
     public void DdDeletesCurrentLine()
     {
         var (editor, vi) = Create("one\ntwo\nthree", 5);

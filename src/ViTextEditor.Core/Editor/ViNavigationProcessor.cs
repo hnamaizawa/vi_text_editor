@@ -31,6 +31,12 @@ public sealed class ViNavigationProcessor
             case "Ctrl+b":
                 _editor.ScrollPage(-1);
                 return true;
+            case "Ctrl+d":
+                _editor.ScrollHalfPage(1);
+                return true;
+            case "Ctrl+u":
+                _editor.ScrollHalfPage(-1);
+                return true;
             default:
                 return false;
         }

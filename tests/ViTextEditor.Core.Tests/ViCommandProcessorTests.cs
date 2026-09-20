@@ -1,0 +1,128 @@
+using ViTextEditor.Core.Editor;
+using Xunit;
+
+namespace ViTextEditor.Core.Tests;
+
+public sealed class ViCommandProcessorTests
+{
+    [Fact]
+    public void NumericColonCommandMovesToOneBasedLine()
+    {
+        var editor = new FakeEditor("one\ntwo\nthree\nfour", 0);
+        var commands = new ViCommandProcessor(editor);
+
+        Assert.True(commands.Execute("3"));
+        Assert.Equal(8, editor.CaretPosition);
+    }
+
+    [Fact]
+    public void DollarColonCommandMovesToLastLine()
+    {
+        var editor = new FakeEditor("one\ntwo\nthree", 0);
+        var commands = new ViCommandProcessor(editor);
+
+        Assert.True(commands.Execute("$"));
+        Assert.Equal(8, editor.CaretPosition);
+    }
+
+    [Fact]
+    public void OversizedLineNumberClampsToLastLine()
+    {
+        var editor = new FakeEditor("one\ntwo\nthree", 0);
+        var commands = new ViCommandProcessor(editor);
+
+        Assert.True(commands.Execute("999"));
+        Assert.Equal(8, editor.CaretPosition);
+    }
+
+    [Fact]
+    public void YankRangeIntoNamedRegisterAndPutAfterCurrentLine()
+    {
+        var editor = new FakeEditor("one\ntwo\nthree\nfour", 0);
+        var registers = new ViRegisterStore();
+        var commands = new ViCommandProcessor(editor, registers);
+
+        Assert.True(commands.Execute("2,3y a"));
+        Assert.Equal("one\ntwo\nthree\nfour", editor.Text);
+
+        editor.MoveCaret(0);
+        Assert.True(commands.Execute("pu a"));
+        Assert.Equal("one\ntwo\nthree\ntwo\nthree\nfour", editor.Text);
+    }
+
+    [Fact]
+    public void YankAbbreviationsAreAccepted()
+    {
+        foreach (var command in new[] { "2y a", "2ya a", "2yan a", "2yank a" })
+        {
+            var editor = new FakeEditor("one\ntwo\nthree", 0);
+            var registers = new ViRegisterStore();
+            var commands = new ViCommandProcessor(editor, registers);
+
+            Assert.True(commands.Execute(command));
+            Assert.True(registers.TryGet('a', out var lines));
+            Assert.Equal(new[] { "two" }, lines);
+        }
+    }
+
+    [Fact]
+    public void PutCanTargetSpecificLineOrZero()
+    {
+        var editor = new FakeEditor("one\ntwo\nthree", 0);
+        var registers = new ViRegisterStore();
+        registers.Yank('a', new[] { "X" });
+        var commands = new ViCommandProcessor(editor, registers);
+
+        Assert.True(commands.Execute("2pu a"));
+        Assert.Equal("one\ntwo\nX\nthree", editor.Text);
+
+        Assert.True(commands.Execute("0put a"));
+        Assert.Equal("X\none\ntwo\nX\nthree", editor.Text);
+    }
+
+    [Fact]
+    public void UppercaseNamedRegisterAppendsLikeVim()
+    {
+        var editor = new FakeEditor("one\ntwo\nthree", 0);
+        var registers = new ViRegisterStore();
+        var commands = new ViCommandProcessor(editor, registers);
+
+        Assert.True(commands.Execute("1y a"));
+        Assert.True(commands.Execute("2y A"));
+        Assert.True(registers.TryGet('a', out var lines));
+        Assert.Equal(new[] { "one", "two" }, lines);
+    }
+
+    [Fact]
+    public void PutIsReportedAsMutatingButYankAndJumpAreNot()
+    {
+        var editor = new FakeEditor("one\ntwo", 0);
+        var commands = new ViCommandProcessor(editor);
+
+        Assert.True(commands.IsMutatingCommand("pu a"));
+        Assert.True(commands.IsMutatingCommand("20put a"));
+        Assert.False(commands.IsMutatingCommand("2y a"));
+        Assert.False(commands.IsMutatingCommand("2"));
+    }
+
+    private sealed class FakeEditor : IEditorAdapter
+    {
+        public FakeEditor(string text, int caret)
+        {
+            Text = text;
+            CaretPosition = caret;
+        }
+
+        public string Text { get; private set; }
+        public int CaretPosition { get; private set; }
+        public void MoveCaret(int position) => CaretPosition = Math.Clamp(position, 0, Text.Length);
+        public void DeleteRange(int position, int length) => Text = Text.Remove(position, length);
+        public void InsertText(int position, string text)
+        {
+            Text = Text.Insert(position, text);
+            CaretPosition = position + text.Length;
+        }
+        public void Undo() { }
+        public void Redo() { }
+    }
+}
