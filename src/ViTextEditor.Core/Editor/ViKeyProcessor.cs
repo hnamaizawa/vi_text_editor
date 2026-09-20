@@ -6,6 +6,9 @@ public sealed class ViKeyProcessor
     private string? _pending;
     private string _register = string.Empty;
     private bool _registerIsLinewise;
+    private RepeatState? _lastRepeat;
+    private PendingInsertRepeat? _pendingInsertRepeat;
+    private bool _isRepeating;
 
     public ViKeyProcessor(IEditorAdapter editor)
     {
@@ -14,8 +17,29 @@ public sealed class ViKeyProcessor
 
     public EditorMode Mode { get; private set; } = EditorMode.Normal;
     public bool HasPendingCommand => _pending is not null;
+    public bool IsRepeating => _isRepeating;
+    public bool IsCapturingInsertRepeat => _pendingInsertRepeat is not null && !_isRepeating;
 
     public event EventHandler? ModeChanged;
+
+    public void CommitInsertRepeat(IReadOnlyList<ViRepeatEdit> edits)
+    {
+        if (_pendingInsertRepeat is null || _isRepeating)
+        {
+            return;
+        }
+
+        var pending = _pendingInsertRepeat;
+        _pendingInsertRepeat = null;
+        if (!pending.BaseChanged && edits.Count == 0)
+        {
+            return;
+        }
+
+        _lastRepeat = new RepeatState(
+            pending.Tokens.ToArray(),
+            edits.Select(edit => new ViRepeatEdit(edit.IsInsert, edit.RelativePosition, edit.Text)).ToArray());
+    }
 
     public bool Handle(string key)
     {
@@ -23,7 +47,6 @@ public sealed class ViKeyProcessor
         {
             if (!string.Equals(key, "Esc", StringComparison.Ordinal))
             {
-                // INSERT中の通常入力はScintilla/IMEへそのまま渡す。
                 return false;
             }
 
@@ -43,94 +66,37 @@ public sealed class ViKeyProcessor
         {
             var pending = _pending;
             _pending = null;
-
-            if (pending == "g" && key == "g")
-            {
-                _editor.MoveCaret(0);
-                return true;
-            }
-
-            if (pending == "d" && key == "d")
-            {
-                DeleteCurrentLine();
-                return true;
-            }
-
-            if (pending == "d" && key == "w")
-            {
-                DeleteWordMotion(bigWord: false);
-                return true;
-            }
-
-            if (pending == "d" && key == "W")
-            {
-                DeleteWordMotion(bigWord: true);
-                return true;
-            }
-
-            if (pending == "d" && key == "e")
-            {
-                DeleteToWordEnd(bigWord: false);
-                return true;
-            }
-
-            if (pending == "d" && key == "E")
-            {
-                DeleteToWordEnd(bigWord: true);
-                return true;
-            }
-
-            if (pending == "d" && key == "$")
-            {
-                DeleteToLineEnd();
-                return true;
-            }
-
-            if (pending == "y" && key == "y")
-            {
-                YankCurrentLine();
-                return true;
-            }
-
-            if (pending == "c" && key is "w" or "e")
-            {
-                ChangeWord(bigWord: false);
-                return true;
-            }
-
-            if (pending == "c" && key is "W" or "E")
-            {
-                ChangeWord(bigWord: true);
-                return true;
-            }
-
-            if (pending == "c" && key == "$")
-            {
-                ChangeToLineEnd();
-                return true;
-            }
-
-            // 未対応の複合コマンドは文字を挿入せず消費する。
-            return true;
+            return HandlePending(pending, key);
         }
 
         switch (key)
         {
+            case ".":
+                RepeatLastChange();
+                return true;
             case "i":
+                BeginInsertRepeat(["i"], baseChanged: false);
                 SetMode(EditorMode.Insert);
                 return true;
             case "a":
                 MoveAfterCaretForInsert();
+                BeginInsertRepeat(["a"], baseChanged: false);
                 SetMode(EditorMode.Insert);
                 return true;
             case "o":
-                OpenLineBelow();
+            {
+                var changed = OpenLineBelow();
+                BeginInsertRepeat(["o"], changed);
                 SetMode(EditorMode.Insert);
                 return true;
+            }
             case "O":
-                OpenLineAbove();
+            {
+                var changed = OpenLineAbove();
+                BeginInsertRepeat(["O"], changed);
                 SetMode(EditorMode.Insert);
                 return true;
+            }
             case "h":
                 MoveHorizontal(-1);
                 return true;
@@ -144,16 +110,25 @@ public sealed class ViKeyProcessor
                 MoveVertical(-1);
                 return true;
             case "w":
-                MoveNextWord();
+                MoveNextWord(bigWord: false);
+                return true;
+            case "W":
+                MoveNextWord(bigWord: true);
                 return true;
             case "b":
-                MovePreviousWord();
+                MovePreviousWord(bigWord: false);
+                return true;
+            case "B":
+                MovePreviousWord(bigWord: true);
                 return true;
             case "e":
-                MoveEndWord();
+                MoveEndWord(bigWord: false);
+                return true;
+            case "E":
+                MoveEndWord(bigWord: true);
                 return true;
             case "0":
-                _editor.MoveCaret(LineStart(_editor.Text, _editor.CaretPosition));
+                _editor.MoveCaret(_editor.LineStart(_editor.CaretPosition));
                 return true;
             case "^":
                 MoveFirstNonWhitespace();
@@ -165,7 +140,7 @@ public sealed class ViKeyProcessor
                 MoveLastLine();
                 return true;
             case "D":
-                DeleteToLineEnd();
+                if (DeleteToLineEnd()) RecordRepeat(["D"]);
                 return true;
             case "g":
             case "d":
@@ -174,13 +149,13 @@ public sealed class ViKeyProcessor
                 _pending = key;
                 return true;
             case "x":
-                DeleteCharacter();
+                if (DeleteCharacter()) RecordRepeat(["x"]);
                 return true;
             case "p":
-                Paste(after: true);
+                if (Paste(after: true)) RecordRepeat(["p"]);
                 return true;
             case "P":
-                Paste(after: false);
+                if (Paste(after: false)) RecordRepeat(["P"]);
                 return true;
             case "u":
                 _editor.Undo();
@@ -189,8 +164,150 @@ public sealed class ViKeyProcessor
                 _editor.Redo();
                 return true;
             default:
-                // NORMALモードでは未対応の印字キーをScintillaへ流さない。
                 return key.Length == 1;
+        }
+    }
+
+    private bool HandlePending(string pending, string key)
+    {
+        if (pending == "g" && key == "g")
+        {
+            _editor.MoveCaret(0);
+            return true;
+        }
+
+        if (pending == "d")
+        {
+            bool changed;
+            switch (key)
+            {
+                case "d":
+                    changed = DeleteCurrentLine();
+                    if (changed) RecordRepeat(["d", "d"]);
+                    return true;
+                case "w":
+                    changed = DeleteWordMotion(bigWord: false);
+                    if (changed) RecordRepeat(["d", "w"]);
+                    return true;
+                case "W":
+                    changed = DeleteWordMotion(bigWord: true);
+                    if (changed) RecordRepeat(["d", "W"]);
+                    return true;
+                case "e":
+                    changed = DeleteToWordEnd(bigWord: false);
+                    if (changed) RecordRepeat(["d", "e"]);
+                    return true;
+                case "E":
+                    changed = DeleteToWordEnd(bigWord: true);
+                    if (changed) RecordRepeat(["d", "E"]);
+                    return true;
+                case "$":
+                    changed = DeleteToLineEnd();
+                    if (changed) RecordRepeat(["d", "$"]);
+                    return true;
+            }
+        }
+
+        if (pending == "y" && key == "y")
+        {
+            YankCurrentLine();
+            return true;
+        }
+
+        if (pending == "c")
+        {
+            if (key is "w" or "e")
+            {
+                var changed = ChangeWord(bigWord: false);
+                BeginInsertRepeat(["c", key], changed);
+                SetMode(EditorMode.Insert);
+                return true;
+            }
+
+            if (key is "W" or "E")
+            {
+                var changed = ChangeWord(bigWord: true);
+                BeginInsertRepeat(["c", key], changed);
+                SetMode(EditorMode.Insert);
+                return true;
+            }
+
+            if (key == "$")
+            {
+                var changed = ChangeToLineEnd();
+                BeginInsertRepeat(["c", "$"], changed);
+                SetMode(EditorMode.Insert);
+                return true;
+            }
+        }
+
+        return true;
+    }
+
+    private void BeginInsertRepeat(string[] tokens, bool baseChanged)
+    {
+        if (_isRepeating)
+        {
+            return;
+        }
+        _pendingInsertRepeat = new PendingInsertRepeat(tokens, baseChanged);
+    }
+
+    private void RecordRepeat(string[] tokens)
+    {
+        if (_isRepeating)
+        {
+            return;
+        }
+        _lastRepeat = new RepeatState(tokens, []);
+    }
+
+    private void RepeatLastChange()
+    {
+        if (_lastRepeat is null || _isRepeating)
+        {
+            return;
+        }
+
+        var repeat = _lastRepeat;
+        _isRepeating = true;
+        _pending = null;
+        _pendingInsertRepeat = null;
+        try
+        {
+            foreach (var token in repeat.Tokens)
+            {
+                Handle(token);
+            }
+
+            if (Mode == EditorMode.Insert)
+            {
+                var anchor = _editor.CaretPosition;
+                foreach (var edit in repeat.InsertEdits)
+                {
+                    var position = Math.Clamp(anchor + edit.RelativePosition, 0, _editor.TextLength);
+                    if (edit.IsInsert)
+                    {
+                        _editor.InsertText(position, edit.Text);
+                    }
+                    else
+                    {
+                        var length = Math.Min(edit.Text.Length, Math.Max(0, _editor.TextLength - position));
+                        if (length > 0)
+                        {
+                            _editor.DeleteRange(position, length);
+                            _editor.MoveCaret(position);
+                        }
+                    }
+                }
+                Handle("Esc");
+            }
+        }
+        finally
+        {
+            _pending = null;
+            _pendingInsertRepeat = null;
+            _isRepeating = false;
         }
     }
 
@@ -200,38 +317,30 @@ public sealed class ViKeyProcessor
         {
             return;
         }
-
         Mode = mode;
         ModeChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void NormalizeNormalCaret()
     {
-        var text = _editor.Text;
-        if (text.Length == 0)
+        var length = _editor.TextLength;
+        if (length == 0)
         {
             _editor.MoveCaret(0);
             return;
         }
 
-        var position = Math.Min(_editor.CaretPosition, text.Length - 1);
-        if (position > 0 && text[position] == '\n')
-        {
-            position--;
-        }
-        if (position > 0 && text[position] == '\r')
-        {
-            position--;
-        }
-
+        var position = Math.Min(_editor.CaretPosition, length - 1);
+        if (position > 0 && _editor.CharAt(position) == '\n') position--;
+        if (position > 0 && _editor.CharAt(position) == '\r') position--;
         _editor.MoveCaret(Math.Max(0, position));
     }
 
     private void MoveAfterCaretForInsert()
     {
-        var text = _editor.Text;
-        var position = Math.Clamp(_editor.CaretPosition, 0, text.Length);
-        if (position < text.Length && text[position] != '\n' && text[position] != '\r')
+        var length = _editor.TextLength;
+        var position = Math.Clamp(_editor.CaretPosition, 0, length);
+        if (position < length && _editor.CharAt(position) is not ('\n' or '\r'))
         {
             position++;
         }
@@ -240,387 +349,308 @@ public sealed class ViKeyProcessor
 
     private void MoveHorizontal(int delta)
     {
-        var text = _editor.Text;
-        if (text.Length == 0)
-        {
-            return;
-        }
-
-        var current = Math.Clamp(_editor.CaretPosition, 0, text.Length - 1);
-        var start = LineStart(text, current);
-        var end = LineEndExclusive(text, current);
+        if (_editor.TextLength == 0) return;
+        var current = Math.Clamp(_editor.CaretPosition, 0, _editor.TextLength - 1);
+        var start = _editor.LineStart(current);
+        var end = _editor.LineEndExclusive(current);
         var max = end > start ? end - 1 : start;
         _editor.MoveCaret(Math.Clamp(current + delta, start, max));
     }
 
     private void MoveVertical(int direction)
     {
-        var text = _editor.Text;
-        if (text.Length == 0)
-        {
-            return;
-        }
-
-        var current = Math.Clamp(_editor.CaretPosition, 0, text.Length - 1);
-        var currentStart = LineStart(text, current);
+        if (_editor.TextLength == 0) return;
+        var current = Math.Clamp(_editor.CaretPosition, 0, _editor.TextLength - 1);
+        var currentStart = _editor.LineStart(current);
         var column = Math.Max(0, current - currentStart);
 
-        int targetStart;
         if (direction > 0)
         {
-            var nextBreak = text.IndexOf('\n', currentStart);
-            if (nextBreak < 0 || nextBreak + 1 >= text.Length)
-            {
-                return;
-            }
-            targetStart = nextBreak + 1;
+            var end = _editor.LineEndExclusive(current);
+            var next = SkipLineBreak(end);
+            if (next >= _editor.TextLength) return;
+            var targetEnd = _editor.LineEndExclusive(next);
+            _editor.MoveCaret(next + Math.Min(column, Math.Max(0, targetEnd - next - 1)));
         }
         else
         {
-            if (currentStart == 0)
-            {
-                return;
-            }
-            var searchFrom = Math.Max(0, currentStart - 2);
-            var previousBreak = text.LastIndexOf('\n', searchFrom);
-            targetStart = previousBreak + 1;
+            if (currentStart == 0) return;
+            var previousEnd = currentStart - 1;
+            if (previousEnd > 0 && _editor.CharAt(previousEnd) == '\n') previousEnd--;
+            if (previousEnd > 0 && _editor.CharAt(previousEnd) == '\r') previousEnd--;
+            var previousStart = _editor.LineStart(Math.Max(0, previousEnd));
+            var targetEnd = _editor.LineEndExclusive(previousStart);
+            _editor.MoveCaret(previousStart + Math.Min(column, Math.Max(0, targetEnd - previousStart - 1)));
         }
-
-        var targetEnd = LineEndExclusive(text, targetStart);
-        var maxColumn = Math.Max(0, targetEnd - targetStart - 1);
-        _editor.MoveCaret(targetStart + Math.Min(column, maxColumn));
     }
 
-    private void MoveNextWord()
+    private void MoveNextWord(bool bigWord)
     {
-        var text = _editor.Text;
-        if (text.Length == 0)
-        {
-            return;
-        }
-
-        var current = Math.Clamp(_editor.CaretPosition, 0, text.Length - 1);
-        var i = Math.Min(current + 1, text.Length);
-        if (IsWord(text[current]))
-        {
-            while (i < text.Length && IsWord(text[i])) i++;
-        }
-        while (i < text.Length && !IsWord(text[i])) i++;
-        if (i < text.Length) _editor.MoveCaret(i);
+        if (_editor.TextLength == 0) return;
+        var target = FindNextWordStart(Math.Clamp(_editor.CaretPosition, 0, _editor.TextLength - 1), bigWord);
+        if (target < _editor.TextLength) _editor.MoveCaret(target);
     }
 
-    private void MovePreviousWord()
+    private int FindNextWordStart(int start, bool bigWord)
     {
-        var text = _editor.Text;
-        if (text.Length == 0)
+        var length = _editor.TextLength;
+        if (length == 0) return 0;
+        var i = Math.Clamp(start, 0, length - 1);
+
+        if (char.IsWhiteSpace(_editor.CharAt(i)))
         {
-            return;
+            while (i < length && char.IsWhiteSpace(_editor.CharAt(i))) i++;
+            return i;
         }
 
-        var i = Math.Clamp(_editor.CaretPosition - 1, 0, text.Length - 1);
-        while (i > 0 && !IsWord(text[i])) i--;
-        while (i > 0 && IsWord(text[i - 1])) i--;
+        if (bigWord)
+        {
+            while (i < length && !char.IsWhiteSpace(_editor.CharAt(i))) i++;
+        }
+        else
+        {
+            var wordClass = ClassifySmallWord(_editor.CharAt(i));
+            while (i < length && ClassifySmallWord(_editor.CharAt(i)) == wordClass) i++;
+        }
+        while (i < length && char.IsWhiteSpace(_editor.CharAt(i))) i++;
+        return i;
+    }
+
+    private void MovePreviousWord(bool bigWord)
+    {
+        if (_editor.TextLength == 0) return;
+        var i = Math.Clamp(_editor.CaretPosition - 1, 0, _editor.TextLength - 1);
+        while (i > 0 && char.IsWhiteSpace(_editor.CharAt(i))) i--;
+        if (bigWord)
+        {
+            while (i > 0 && !char.IsWhiteSpace(_editor.CharAt(i - 1))) i--;
+        }
+        else
+        {
+            var wordClass = ClassifySmallWord(_editor.CharAt(i));
+            while (i > 0 && ClassifySmallWord(_editor.CharAt(i - 1)) == wordClass) i--;
+        }
         _editor.MoveCaret(i);
     }
 
-    private void MoveEndWord()
+    private void MoveEndWord(bool bigWord)
     {
-        var text = _editor.Text;
-        if (text.Length == 0)
+        var length = _editor.TextLength;
+        if (length == 0) return;
+        var i = Math.Clamp(_editor.CaretPosition + 1, 0, length - 1);
+        while (i < length - 1 && char.IsWhiteSpace(_editor.CharAt(i))) i++;
+        if (bigWord)
         {
-            return;
+            while (i < length - 1 && !char.IsWhiteSpace(_editor.CharAt(i + 1))) i++;
         }
-
-        var i = Math.Clamp(_editor.CaretPosition + 1, 0, text.Length - 1);
-        while (i < text.Length - 1 && !IsWord(text[i])) i++;
-        while (i < text.Length - 1 && IsWord(text[i + 1])) i++;
+        else
+        {
+            var wordClass = ClassifySmallWord(_editor.CharAt(i));
+            while (i < length - 1 && ClassifySmallWord(_editor.CharAt(i + 1)) == wordClass) i++;
+        }
         _editor.MoveCaret(i);
     }
 
     private void MoveFirstNonWhitespace()
     {
-        var text = _editor.Text;
-        var start = LineStart(text, _editor.CaretPosition);
-        var end = LineEndExclusive(text, _editor.CaretPosition);
+        var start = _editor.LineStart(_editor.CaretPosition);
+        var end = _editor.LineEndExclusive(_editor.CaretPosition);
         var i = start;
-        while (i < end && char.IsWhiteSpace(text[i])) i++;
+        while (i < end && char.IsWhiteSpace(_editor.CharAt(i))) i++;
         _editor.MoveCaret(i < end ? i : start);
     }
 
     private void MoveLineEnd()
     {
-        var text = _editor.Text;
-        var start = LineStart(text, _editor.CaretPosition);
-        var end = LineEndExclusive(text, _editor.CaretPosition);
+        var start = _editor.LineStart(_editor.CaretPosition);
+        var end = _editor.LineEndExclusive(_editor.CaretPosition);
         _editor.MoveCaret(end > start ? end - 1 : start);
     }
 
     private void MoveLastLine()
     {
-        var text = _editor.Text;
-        if (text.Length == 0)
+        var length = _editor.TextLength;
+        if (length == 0)
         {
             _editor.MoveCaret(0);
             return;
         }
-        var lastBreak = text.LastIndexOf('\n');
-        _editor.MoveCaret(lastBreak < 0 ? 0 : Math.Min(lastBreak + 1, text.Length - 1));
+        _editor.MoveCaret(_editor.LineStart(length - 1));
     }
 
-    private void ChangeWord(bool bigWord)
+    private bool ChangeWord(bool bigWord)
     {
-        var text = _editor.Text;
-        if (text.Length == 0)
-        {
-            SetMode(EditorMode.Insert);
-            return;
-        }
-
-        var start = Math.Clamp(_editor.CaretPosition, 0, text.Length - 1);
-        var lineEnd = LineEndExclusive(text, start);
-        if (start >= lineEnd)
-        {
-            SetMode(EditorMode.Insert);
-            return;
-        }
-
+        var length = _editor.TextLength;
+        if (length == 0) return false;
+        var start = Math.Clamp(_editor.CaretPosition, 0, length - 1);
         var end = start;
-        if (char.IsWhiteSpace(text[start]))
+        if (char.IsWhiteSpace(_editor.CharAt(start)))
         {
-            while (end < lineEnd && char.IsWhiteSpace(text[end])) end++;
+            while (end < length && char.IsWhiteSpace(_editor.CharAt(end))) end++;
         }
         else if (bigWord)
         {
-            while (end < lineEnd && !char.IsWhiteSpace(text[end])) end++;
+            while (end < length && !char.IsWhiteSpace(_editor.CharAt(end))) end++;
         }
         else
         {
-            var wordClass = ClassifySmallWord(text[start]);
-            while (end < lineEnd && ClassifySmallWord(text[end]) == wordClass) end++;
+            var wordClass = ClassifySmallWord(_editor.CharAt(start));
+            while (end < length && ClassifySmallWord(_editor.CharAt(end)) == wordClass) end++;
         }
-
-        DeleteIntoRegister(start, end);
-        SetMode(EditorMode.Insert);
+        return DeleteIntoRegister(start, end);
     }
 
-    private void ChangeToLineEnd()
+    private bool ChangeToLineEnd()
     {
-        var text = _editor.Text;
-        if (text.Length == 0)
-        {
-            SetMode(EditorMode.Insert);
-            return;
-        }
-
-        var start = Math.Clamp(_editor.CaretPosition, 0, text.Length - 1);
-        DeleteIntoRegister(start, LineEndExclusive(text, start));
-        SetMode(EditorMode.Insert);
+        if (_editor.TextLength == 0) return false;
+        var start = Math.Clamp(_editor.CaretPosition, 0, _editor.TextLength - 1);
+        return DeleteIntoRegister(start, _editor.LineEndExclusive(start));
     }
 
-    private void DeleteWordMotion(bool bigWord)
+    private bool DeleteWordMotion(bool bigWord)
     {
-        var text = _editor.Text;
-        if (text.Length == 0)
-        {
-            return;
-        }
-
-        var start = Math.Clamp(_editor.CaretPosition, 0, text.Length - 1);
-        var lineEnd = LineEndExclusive(text, start);
-        if (start >= lineEnd)
-        {
-            return;
-        }
-
-        var end = start;
-        if (char.IsWhiteSpace(text[start]))
-        {
-            while (end < lineEnd && char.IsWhiteSpace(text[end])) end++;
-        }
-        else if (bigWord)
-        {
-            while (end < lineEnd && !char.IsWhiteSpace(text[end])) end++;
-            while (end < lineEnd && char.IsWhiteSpace(text[end])) end++;
-        }
-        else
-        {
-            var wordClass = ClassifySmallWord(text[start]);
-            while (end < lineEnd && ClassifySmallWord(text[end]) == wordClass) end++;
-            while (end < lineEnd && char.IsWhiteSpace(text[end])) end++;
-        }
-
-        DeleteIntoRegister(start, end);
-    }
-
-    private void DeleteToWordEnd(bool bigWord)
-    {
-        var text = _editor.Text;
-        if (text.Length == 0)
-        {
-            return;
-        }
-
-        var start = Math.Clamp(_editor.CaretPosition, 0, text.Length - 1);
-        var lineEnd = LineEndExclusive(text, start);
-        if (start >= lineEnd)
-        {
-            return;
-        }
-
-        var end = start;
-        while (end < lineEnd && char.IsWhiteSpace(text[end])) end++;
-        if (end >= lineEnd)
-        {
-            DeleteIntoRegister(start, lineEnd);
-            return;
-        }
-
-        if (bigWord)
-        {
-            while (end < lineEnd && !char.IsWhiteSpace(text[end])) end++;
-        }
-        else
-        {
-            var wordClass = ClassifySmallWord(text[end]);
-            while (end < lineEnd && ClassifySmallWord(text[end]) == wordClass) end++;
-        }
-
-        DeleteIntoRegister(start, end);
-    }
-
-    private void DeleteToLineEnd()
-    {
-        var text = _editor.Text;
-        if (text.Length == 0)
-        {
-            return;
-        }
-
-        var start = Math.Clamp(_editor.CaretPosition, 0, text.Length - 1);
-        DeleteIntoRegister(start, LineEndExclusive(text, start));
-    }
-
-    private void DeleteIntoRegister(int start, int end)
-    {
-        var text = _editor.Text;
-        start = Math.Clamp(start, 0, text.Length);
-        end = Math.Clamp(end, start, text.Length);
+        if (_editor.TextLength == 0) return false;
+        var start = Math.Clamp(_editor.CaretPosition, 0, _editor.TextLength - 1);
+        var end = FindNextWordStart(start, bigWord);
         if (end <= start)
         {
-            return;
+            end = Math.Min(_editor.TextLength, start + 1);
         }
+        return DeleteIntoRegister(start, end);
+    }
 
-        _register = text.Substring(start, end - start);
+    private bool DeleteToWordEnd(bool bigWord)
+    {
+        var length = _editor.TextLength;
+        if (length == 0) return false;
+        var start = Math.Clamp(_editor.CaretPosition, 0, length - 1);
+        var end = start;
+        while (end < length && char.IsWhiteSpace(_editor.CharAt(end))) end++;
+        if (end >= length) return DeleteIntoRegister(start, length);
+        if (bigWord)
+        {
+            while (end < length && !char.IsWhiteSpace(_editor.CharAt(end))) end++;
+        }
+        else
+        {
+            var wordClass = ClassifySmallWord(_editor.CharAt(end));
+            while (end < length && ClassifySmallWord(_editor.CharAt(end)) == wordClass) end++;
+        }
+        return DeleteIntoRegister(start, end);
+    }
+
+    private bool DeleteToLineEnd()
+    {
+        if (_editor.TextLength == 0) return false;
+        var start = Math.Clamp(_editor.CaretPosition, 0, _editor.TextLength - 1);
+        return DeleteIntoRegister(start, _editor.LineEndExclusive(start));
+    }
+
+    private bool DeleteIntoRegister(int start, int end)
+    {
+        var length = _editor.TextLength;
+        start = Math.Clamp(start, 0, length);
+        end = Math.Clamp(end, start, length);
+        if (end <= start) return false;
+
+        _register = _editor.GetTextRange(start, end - start);
         _registerIsLinewise = false;
         _editor.DeleteRange(start, end - start);
-        var remaining = _editor.Text.Length;
+        var remaining = _editor.TextLength;
         _editor.MoveCaret(remaining == 0 ? 0 : Math.Min(start, remaining - 1));
+        return true;
     }
 
-    private void DeleteCharacter()
+    private bool DeleteCharacter()
     {
-        var text = _editor.Text;
-        if (text.Length == 0)
-        {
-            return;
-        }
-
-        var position = Math.Clamp(_editor.CaretPosition, 0, text.Length - 1);
-        var length = text[position] == '\r' && position + 1 < text.Length && text[position + 1] == '\n' ? 2 : 1;
-        _register = text.Substring(position, Math.Min(length, text.Length - position));
+        if (_editor.TextLength == 0) return false;
+        var position = Math.Clamp(_editor.CaretPosition, 0, _editor.TextLength - 1);
+        var length = _editor.CharAt(position) == '\r' && position + 1 < _editor.TextLength && _editor.CharAt(position + 1) == '\n' ? 2 : 1;
+        _register = _editor.GetTextRange(position, Math.Min(length, _editor.TextLength - position));
         _registerIsLinewise = false;
-        _editor.DeleteRange(position, Math.Min(length, text.Length - position));
-        var remaining = _editor.Text.Length;
+        _editor.DeleteRange(position, Math.Min(length, _editor.TextLength - position));
+        var remaining = _editor.TextLength;
         _editor.MoveCaret(remaining == 0 ? 0 : Math.Min(position, remaining - 1));
+        return true;
     }
 
-    private void DeleteCurrentLine()
+    private bool DeleteCurrentLine()
     {
-        var text = _editor.Text;
-        if (text.Length == 0)
-        {
-            return;
-        }
-
-        var current = Math.Clamp(_editor.CaretPosition, 0, text.Length - 1);
-        var start = LineStart(text, current);
-        var contentEnd = LineEndExclusive(text, current);
-        _register = text.Substring(start, Math.Max(0, contentEnd - start));
+        if (_editor.TextLength == 0) return false;
+        var current = Math.Clamp(_editor.CaretPosition, 0, _editor.TextLength - 1);
+        var start = _editor.LineStart(current);
+        var contentEnd = _editor.LineEndExclusive(current);
+        _register = _editor.GetTextRange(start, Math.Max(0, contentEnd - start));
         _registerIsLinewise = true;
 
-        var newline = text.IndexOf('\n', start);
+        var afterBreak = SkipLineBreak(contentEnd);
         int deleteStart;
         int deleteLength;
-        if (newline >= 0)
+        if (afterBreak > contentEnd)
         {
             deleteStart = start;
-            deleteLength = newline + 1 - start;
+            deleteLength = afterBreak - start;
         }
         else if (start > 0)
         {
-            var breakLength = start >= 2 && text[start - 2] == '\r' && text[start - 1] == '\n' ? 2 : 1;
-            deleteStart = start - breakLength;
-            deleteLength = text.Length - deleteStart;
+            deleteStart = start - 1;
+            if (deleteStart > 0 && _editor.CharAt(deleteStart) == '\n' && _editor.CharAt(deleteStart - 1) == '\r') deleteStart--;
+            deleteLength = _editor.TextLength - deleteStart;
         }
         else
         {
             deleteStart = 0;
-            deleteLength = text.Length;
+            deleteLength = _editor.TextLength;
         }
 
         _editor.DeleteRange(deleteStart, deleteLength);
-        var remaining = _editor.Text.Length;
+        var remaining = _editor.TextLength;
         _editor.MoveCaret(remaining == 0 ? 0 : Math.Min(deleteStart, remaining - 1));
+        return true;
     }
 
     private void YankCurrentLine()
     {
-        var text = _editor.Text;
-        if (text.Length == 0)
+        if (_editor.TextLength == 0)
         {
             _register = string.Empty;
             _registerIsLinewise = true;
             return;
         }
-
-        var start = LineStart(text, _editor.CaretPosition);
-        var end = LineEndExclusive(text, _editor.CaretPosition);
-        _register = text.Substring(start, Math.Max(0, end - start));
+        var start = _editor.LineStart(_editor.CaretPosition);
+        var end = _editor.LineEndExclusive(_editor.CaretPosition);
+        _register = _editor.GetTextRange(start, Math.Max(0, end - start));
         _registerIsLinewise = true;
     }
 
-    private void Paste(bool after)
+    private bool Paste(bool after)
     {
-        if (_register.Length == 0)
-        {
-            return;
-        }
-
-        var text = _editor.Text;
+        if (_register.Length == 0) return false;
         if (_registerIsLinewise)
         {
-            PasteLinewise(text, after);
-            return;
+            PasteLinewise(after);
+            return true;
         }
 
-        var insertAt = text.Length == 0
+        var insertAt = _editor.TextLength == 0
             ? 0
-            : after ? Math.Min(_editor.CaretPosition + 1, text.Length) : Math.Min(_editor.CaretPosition, text.Length);
+            : after ? Math.Min(_editor.CaretPosition + 1, _editor.TextLength) : Math.Min(_editor.CaretPosition, _editor.TextLength);
         _editor.InsertText(insertAt, _register);
-        _editor.MoveCaret(Math.Min(insertAt, Math.Max(0, _editor.Text.Length - 1)));
+        _editor.MoveCaret(Math.Min(insertAt, Math.Max(0, _editor.TextLength - 1)));
+        return true;
     }
 
-    private void PasteLinewise(string text, bool after)
+    private void PasteLinewise(bool after)
     {
-        if (text.Length == 0)
+        var newlineText = DetectNewLine();
+        if (_editor.TextLength == 0)
         {
             _editor.InsertText(0, _register);
             _editor.MoveCaret(0);
             return;
         }
 
-        var newlineText = DetectNewLine(text);
-        var start = LineStart(text, _editor.CaretPosition);
+        var start = _editor.LineStart(_editor.CaretPosition);
         if (!after)
         {
             _editor.InsertText(start, _register + newlineText);
@@ -628,105 +658,78 @@ public sealed class ViKeyProcessor
             return;
         }
 
-        var newline = text.IndexOf('\n', start);
-        if (newline >= 0)
+        var end = _editor.LineEndExclusive(_editor.CaretPosition);
+        var afterBreak = SkipLineBreak(end);
+        if (afterBreak > end)
         {
-            var insertAt = newline + 1;
-            _editor.InsertText(insertAt, _register + newlineText);
-            _editor.MoveCaret(insertAt);
+            _editor.InsertText(afterBreak, _register + newlineText);
+            _editor.MoveCaret(afterBreak);
         }
         else
         {
-            var insertAt = text.Length;
+            var insertAt = _editor.TextLength;
             _editor.InsertText(insertAt, newlineText + _register);
             _editor.MoveCaret(insertAt + newlineText.Length);
         }
     }
 
-    private void OpenLineBelow()
+    private bool OpenLineBelow()
     {
-        var text = _editor.Text;
-        if (text.Length == 0)
+        var newlineText = DetectNewLine();
+        if (_editor.TextLength == 0)
         {
-            return;
+            _editor.InsertText(0, newlineText);
+            _editor.MoveCaret(0);
+            return true;
         }
-
-        var start = LineStart(text, _editor.CaretPosition);
-        var newlineText = DetectNewLine(text);
-        var newline = text.IndexOf('\n', start);
-        if (newline >= 0)
+        var end = _editor.LineEndExclusive(_editor.CaretPosition);
+        var afterBreak = SkipLineBreak(end);
+        if (afterBreak > end)
         {
-            var insertAt = newline + 1;
-            _editor.InsertText(insertAt, newlineText);
-            _editor.MoveCaret(insertAt);
+            _editor.InsertText(afterBreak, newlineText);
+            _editor.MoveCaret(afterBreak);
         }
         else
         {
-            var insertAt = text.Length;
+            var insertAt = _editor.TextLength;
             _editor.InsertText(insertAt, newlineText);
             _editor.MoveCaret(insertAt + newlineText.Length);
         }
+        return true;
     }
 
-    private void OpenLineAbove()
+    private bool OpenLineAbove()
     {
-        var text = _editor.Text;
-        if (text.Length == 0)
-        {
-            return;
-        }
-
-        var start = LineStart(text, _editor.CaretPosition);
-        _editor.InsertText(start, DetectNewLine(text));
+        var start = _editor.LineStart(_editor.CaretPosition);
+        _editor.InsertText(start, DetectNewLine());
         _editor.MoveCaret(start);
+        return true;
+    }
+
+    private int SkipLineBreak(int position)
+    {
+        var i = Math.Clamp(position, 0, _editor.TextLength);
+        if (i < _editor.TextLength && _editor.CharAt(i) == '\r') i++;
+        if (i < _editor.TextLength && _editor.CharAt(i) == '\n') i++;
+        return i;
+    }
+
+    private string DetectNewLine()
+    {
+        var sampleLength = Math.Min(_editor.TextLength, 4096);
+        if (sampleLength == 0) return Environment.NewLine;
+        var sample = _editor.GetTextRange(0, sampleLength);
+        if (sample.Contains("\r\n", StringComparison.Ordinal)) return "\r\n";
+        if (sample.Contains('\n')) return "\n";
+        if (sample.Contains('\r')) return "\r";
+        return Environment.NewLine;
     }
 
     private static SmallWordClass ClassifySmallWord(char c)
     {
         if (char.IsWhiteSpace(c)) return SmallWordClass.Whitespace;
-        if (IsWord(c)) return SmallWordClass.Keyword;
+        if (char.IsLetterOrDigit(c) || c == '_') return SmallWordClass.Keyword;
         return SmallWordClass.Punctuation;
-    }
-
-    private static bool IsWord(char c) => char.IsLetterOrDigit(c) || c == '_';
-
-    private static int LineStart(string text, int position)
-    {
-        if (text.Length == 0)
-        {
-            return 0;
-        }
-        position = Math.Clamp(position, 0, text.Length);
-        if (position == 0)
-        {
-            return 0;
-        }
-        var previousBreak = text.LastIndexOf('\n', Math.Min(position - 1, text.Length - 1));
-        return previousBreak + 1;
-    }
-
-    private static int LineEndExclusive(string text, int position)
-    {
-        if (text.Length == 0)
-        {
-            return 0;
-        }
-        var start = LineStart(text, position);
-        var newline = text.IndexOf('\n', start);
-        var end = newline < 0 ? text.Length : newline;
-        if (end > start && text[end - 1] == '\r')
-        {
-            end--;
-        }
-        return end;
-    }
-
-    private static string DetectNewLine(string text)
-    {
-        if (text.Contains("\r\n", StringComparison.Ordinal)) return "\r\n";
-        if (text.Contains('\n')) return "\n";
-        if (text.Contains('\r')) return "\r";
-        return Environment.NewLine;
     }
 
     private enum SmallWordClass
@@ -735,4 +738,7 @@ public sealed class ViKeyProcessor
         Keyword,
         Punctuation
     }
+
+    private sealed record RepeatState(string[] Tokens, ViRepeatEdit[] InsertEdits);
+    private sealed record PendingInsertRepeat(string[] Tokens, bool BaseChanged);
 }
