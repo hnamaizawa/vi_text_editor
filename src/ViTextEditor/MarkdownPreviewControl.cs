@@ -46,7 +46,9 @@ internal sealed class MarkdownPreviewControl : UserControl
         _browser.Dock = DockStyle.Fill;
         _browser.ScriptErrorsSuppressed = true;
         _browser.AllowWebBrowserDrop = false;
-        _browser.WebBrowserShortcutsEnabled = true;
+        // The preview is intentionally vi-driven. Disable IE/WebBrowser shortcuts
+        // such as Ctrl+F so the workspace can route them to vi page movement.
+        _browser.WebBrowserShortcutsEnabled = false;
         _browser.DocumentCompleted += (_, _) => UpdateStatus();
 
         Controls.Add(_browser);
