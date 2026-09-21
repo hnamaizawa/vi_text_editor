@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 
 namespace ViTextEditor.Core.Editor;
@@ -42,7 +43,14 @@ public static class JsonFormattingService
                 AllowTrailingCommas = true,
                 CommentHandling = JsonCommentHandling.Skip
             });
-            var options = new JsonSerializerOptions { WriteIndented = true };
+            var options = new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                // Keep Japanese and other readable Unicode characters as-is instead of
+                // escaping them to \uXXXX sequences. JSON-required escaping (quotes,
+                // backslashes, control characters, etc.) is still preserved.
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            };
             formatted = JsonSerializer.Serialize(document.RootElement, options);
             if (newLine != "\n") formatted = formatted.Replace("\n", newLine, StringComparison.Ordinal);
             return true;
