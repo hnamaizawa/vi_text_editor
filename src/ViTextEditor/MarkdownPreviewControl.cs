@@ -14,6 +14,7 @@ internal sealed class MarkdownPreviewControl : UserControl
     private readonly MarkdownPipeline _pipeline = new MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
     private readonly ViOptions _options = ViOptions.Shared;
     private IDisposable? _zoomFilter;
+    private IDisposable? _commandPrefixFilter;
     private bool _pendingG;
     private string? _lastSearch;
     private bool _lastSearchForward = true;
@@ -33,7 +34,7 @@ internal sealed class MarkdownPreviewControl : UserControl
         _toolbar.Items.Add(new ToolStripSeparator());
         _toolbar.Items.Add(_sourceLabel);
         _toolbar.Items.Add(new ToolStripSeparator());
-        _toolbar.Items.Add(new ToolStripLabel("vi: j/k  Ctrl+F/B/D/U  gg/G  / ? n/N"));
+        _toolbar.Items.Add(new ToolStripLabel("vi: j/k  Ctrl+F/B/D/U  gg/G  / ? n/N  :set ic/noic"));
         _toolbar.Items.Add(_statusLabel);
         _toolbar.Dock = DockStyle.Top;
 
@@ -56,11 +57,24 @@ internal sealed class MarkdownPreviewControl : UserControl
         Controls.Add(_toolbar);
 
         _zoomFilter = SmoothWheelZoomFilter.Attach(_browser, ApplyZoomSteps);
+        // Do not infer ':'/'/'/'?' from OEM key codes. On JIS keyboards the same
+        // physical key can map differently. WM_CHAR contains the actual character
+        // produced by the active keyboard layout, so COMMAND/search input works the
+        // same way as the main editor's layout-independent punctuation handling.
+        _commandPrefixFilter = ActualCommandPrefixFilter.Attach(
+            this,
+            () => !_command.Visible,
+            BeginCommand);
         RefreshPreview();
         UpdateStatus();
     }
 
     public void FocusViewer() => _browser.Focus();
+
+    public void CancelCommandInput()
+    {
+        if (_command.Visible) EndCommand();
+    }
 
     public bool HandleKey(Keys keyData)
     {
@@ -108,20 +122,8 @@ internal sealed class MarkdownPreviewControl : UserControl
         if (keyCode == Keys.K) { ScrollBy(-44); return true; }
         if (keyCode == Keys.N) { RepeatSearch(reverse: shift); return true; }
 
-        // '/' and '?' share the same physical key on common JIS/US layouts.
-        if (keyCode == Keys.OemQuestion)
-        {
-            BeginCommand(shift ? '?' : '/');
-            return true;
-        }
-
-        // ':' is optional in the viewer, but useful for :set ic / :set noic.
-        if (shift && keyCode == Keys.OemSemicolon)
-        {
-            BeginCommand(':');
-            return true;
-        }
-
+        // ':', '/' and '?' are intentionally not inferred from Keys.Oem* here.
+        // ActualCommandPrefixFilter receives the real WM_CHAR instead.
         return false;
     }
 
@@ -140,6 +142,8 @@ internal sealed class MarkdownPreviewControl : UserControl
     {
         if (disposing)
         {
+            _commandPrefixFilter?.Dispose();
+            _commandPrefixFilter = null;
             _zoomFilter?.Dispose();
             _zoomFilter = null;
         }
@@ -158,6 +162,7 @@ internal sealed class MarkdownPreviewControl : UserControl
         _command.BringToFront();
         _command.Focus();
         _command.SelectionStart = _command.TextLength;
+        _statusLabel.Text = prefix == ':' ? "COMMAND" : $"SEARCH {prefix}";
     }
 
     private void CommandOnKeyDown(object? sender, KeyEventArgs e)
@@ -178,23 +183,30 @@ internal sealed class MarkdownPreviewControl : UserControl
         var value = _command.Text.Length > 1 ? _command.Text[1..] : string.Empty;
         if (_commandPrefix == ':')
         {
-            if (_options.TryExecuteSet(value, out var message))
-                _statusLabel.Text = message ?? string.Empty;
+            string message;
+            if (_options.TryExecuteSet(value, out var optionMessage))
+                message = optionMessage ?? (_options.IgnoreCase ? "ignorecase" : "noignorecase");
+            else
+                message = $"E492: Not an editor command: {value}";
+
+            EndCommand(refreshStatus: false);
+            _statusLabel.Text = $"{message}  {_zoomPercent}%";
         }
-        else if (!string.IsNullOrWhiteSpace(value))
+        else
         {
-            Search(value, _commandPrefix == '/');
+            if (!string.IsNullOrWhiteSpace(value))
+                Search(value, _commandPrefix == '/');
+            EndCommand(refreshStatus: false);
         }
-        EndCommand();
         Consume(e);
     }
 
-    private void EndCommand()
+    private void EndCommand(bool refreshStatus = true)
     {
         _command.Visible = false;
         _command.Text = string.Empty;
         _browser.Focus();
-        UpdateStatus();
+        if (refreshStatus) UpdateStatus();
     }
 
     private bool Search(string query, bool forward)
@@ -257,6 +269,47 @@ internal sealed class MarkdownPreviewControl : UserControl
     {
         e.Handled = true;
         e.SuppressKeyPress = true;
+    }
+
+    private sealed class ActualCommandPrefixFilter : IMessageFilter, IDisposable
+    {
+        private const int WmChar = 0x0102;
+        private readonly Control _owner;
+        private readonly Func<bool> _canBegin;
+        private readonly Action<char> _begin;
+        private bool _disposed;
+
+        private ActualCommandPrefixFilter(Control owner, Func<bool> canBegin, Action<char> begin)
+        {
+            _owner = owner;
+            _canBegin = canBegin;
+            _begin = begin;
+            Application.AddMessageFilter(this);
+        }
+
+        public static IDisposable Attach(Control owner, Func<bool> canBegin, Action<char> begin) =>
+            new ActualCommandPrefixFilter(owner, canBegin, begin);
+
+        public bool PreFilterMessage(ref Message m)
+        {
+            if (_disposed || m.Msg != WmChar || _owner.IsDisposed || !_owner.Visible || !_owner.ContainsFocus || !_canBegin())
+                return false;
+
+            var raw = m.WParam.ToInt64();
+            if (raw < char.MinValue || raw > char.MaxValue) return false;
+            var ch = (char)raw;
+            if (ch != ':' && ch != '/' && ch != '?') return false;
+
+            _begin(ch);
+            return true;
+        }
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            Application.RemoveMessageFilter(this);
+        }
     }
 
     private static string BuildHtml(string body) => $$"""
