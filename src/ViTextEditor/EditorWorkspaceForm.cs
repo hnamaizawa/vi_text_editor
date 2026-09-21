@@ -93,9 +93,20 @@ internal sealed class EditorWorkspaceForm : Form
     public void SelectNextTab(int delta)
     {
         if (_tabs.TabCount < 2) return;
+
+        // A viewer-owned command/search box must not keep focus when moving away
+        // from its tab. Cancel transient input first, then move focus explicitly to
+        // the newly selected tab's main control.
+        if (_tabs.SelectedTab is { } current &&
+            _sessions.TryGetValue(current, out var currentSession))
+        {
+            currentSession.MarkdownPreview?.CancelCommandInput();
+        }
+
         var next = (_tabs.SelectedIndex + delta) % _tabs.TabCount;
         if (next < 0) next += _tabs.TabCount;
         _tabs.SelectedIndex = next;
+        FocusSelectedTabContent();
     }
 
     public void ExitApplication() => Close();
@@ -169,8 +180,8 @@ internal sealed class EditorWorkspaceForm : Form
         var menu = child.MainMenuStrip;
         if (menu is null) return;
 
-        // v0.1.19: normal startup is editable. Reference mode remains available as
-        // an explicit opt-in safety mode from the Mode menu.
+        // Normal startup is editable. Reference mode remains available as an
+        // explicit opt-in safety mode from the Mode menu.
         var mode = menu.Items.OfType<ToolStripMenuItem>()
             .FirstOrDefault(item => item.Text.Contains("モード", StringComparison.Ordinal));
         var reference = mode?.DropDownItems.OfType<ToolStripMenuItem>()
@@ -206,14 +217,14 @@ internal sealed class EditorWorkspaceForm : Form
             ReplaceHelpItem(help, item => item.Text.Contains("バージョン情報", StringComparison.Ordinal),
                 new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show(
                     child,
-                    "vi_text_editor v0.1.19\nEdit-by-default / Unicode JSON / Markdown vi viewer / smooth zoom",
+                    "vi_text_editor v0.1.20\nMarkdown COMMAND mode / reliable viewer tab navigation",
                     "バージョン情報",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information)));
             ReplaceHelpItem(help, item => item.Text.Contains("ワークスペース操作", StringComparison.Ordinal),
-                new ToolStripMenuItem("v0.1.19 ワークスペース操作", null, (_, _) => MessageBox.Show(
+                new ToolStripMenuItem("v0.1.20 ワークスペース操作", null, (_, _) => MessageBox.Show(
                     child,
-                    "既定: 編集モード（参照モードは任意でON）\nCtrl+Shift+J: JSON整形\nCtrl+Shift+M: Markdownプレビュー\n\nMarkdown vi: j/k, Ctrl+F/B/D/U, gg/G, / ? n/N, :set ic/noic\nCtrl+マウスホイール: デバウンスされた拡大縮小",
+                    "Ctrl+Shift+J: JSON整形\nCtrl+Shift+M: Markdownプレビュー\nCtrl+Tab / Ctrl+Shift+Tab: タブ切替\nCtrl+PageDown / Ctrl+PageUp: タブ切替\n\nMarkdown vi: j/k, Ctrl+F/B/D/U, gg/G, / ? n/N\nMarkdown COMMAND: :set ic / :set noic / :set ic?\nCtrl+マウスホイール: デバウンスされた拡大縮小",
                     "ワークスペース操作",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information)));
@@ -331,10 +342,42 @@ internal sealed class EditorWorkspaceForm : Form
         Text = selected is null ? "vi_text_editor" : $"{selected.Text} - vi_text_editor workspace";
     }
 
+    private void FocusSelectedTabContent()
+    {
+        if (_tabs.SelectedTab is not { } selected || !_sessions.TryGetValue(selected, out var session))
+        {
+            _tabs.Focus();
+            return;
+        }
+
+        if (session.EditorForm is { IsDisposed: false } form && MainFormWorkspaceBridge.GetEditor(form) is { IsDisposed: false } editor)
+        {
+            editor.Focus();
+            return;
+        }
+        if (session.MarkdownPreview is { IsDisposed: false } preview)
+        {
+            preview.FocusViewer();
+            return;
+        }
+        if (session.LargeViewer is { IsDisposed: false } large)
+        {
+            large.FocusViewer();
+            return;
+        }
+        _tabs.Focus();
+    }
+
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
         if (keyData == (Keys.Control | Keys.T)) { NewTab(); return true; }
         if (keyData == (Keys.Control | Keys.W)) { CloseCurrentTab(); return true; }
+
+        // Workspace tab navigation has higher priority than any embedded viewer.
+        // In particular, WebBrowser may otherwise consume Ctrl+PageUp/PageDown
+        // after the user scrolls the Markdown preview.
+        if (keyData == (Keys.Control | Keys.PageDown)) { SelectNextTab(1); return true; }
+        if (keyData == (Keys.Control | Keys.PageUp)) { SelectNextTab(-1); return true; }
         if (keyData == (Keys.Control | Keys.Tab)) { SelectNextTab(1); return true; }
         if (keyData == (Keys.Control | Keys.Shift | Keys.Tab)) { SelectNextTab(-1); return true; }
 
