@@ -32,6 +32,18 @@ v0.1.17では通常NORMALモードで日常的に使うcursor motionを拡張す
 
 `f/F/t/T` の次の文字は、`x` 等であっても編集コマンドではなくfind targetとして先に処理する。
 
+## 回帰検証
+
+v0.1.17では次をCIで必須確認する。
+
+```text
+dotnet test tests/ViTextEditor.Core.Tests/ViTextEditor.Core.Tests.csproj --configuration Release
+dotnet build src/ViTextEditor/ViTextEditor.csproj --configuration Release
+dotnet publish src/ViTextEditor/ViTextEditor.csproj --configuration Release --runtime win-x64 --self-contained true
+```
+
+特に空行を含む `j/k` と `{`/`}`、`ge/gE`、`%`、`f/F/t/T`、compact JSONと符号直後に空白を含む入力を回帰対象とする。
+
 ## 次段階として分離するVim機能
 
 以下は単純なcursor motionだけではなく、別の状態管理またはoperator統合が必要なためv0.1.17のスコープ外とする。
