@@ -1,136 +1,207 @@
 # vi_text_editor
 
-Windows向けの軽量テキストエディターです。EmEditor／サクラエディタに近いGUIとファイル操作を持ち、編集操作にはvi系キーバインドを採用します。
+Windows向けの軽量テキストエディターです。EmEditor／サクラエディタに近いGUIとファイル操作を持ち、基本操作はvi/Vim系キーバインドで行います。
+
+現在のアプリ版は **v0.1.19** です。
+
+## 主な特徴
+
+- .NET 10 + WinForms + Scintilla5.NET
+- Windows x64自己完結版を配布し、通常利用時は.NETの別途インストール不要
+- NORMAL / INSERT / COMMANDを中心としたvi操作
+- 日本語IME、UTF-8 / UTF-8 BOM / Shift_JIS / UTF-16、CRLF / LF対応
+- 複数タブ、最近使ったファイル、Large Fileモード
+- JSON整形、Markdownプレビュー、拡張子別シンタックス強調
+- バイナリビューア、文字コード別TEXT表示、vi風移動・検索
+- 右下に1始まりの `X=桁 / Y=行` 座標表示
+- 既定は編集モード。必要な場合だけ参照モードを明示的にON
 
 ## 開発方針
 
 1. 人が自然言語で要件を伝える
 2. AIが必要なソースコードを最小差分で修正する
 3. AIがハーネス／ガードレールに従って回帰テストする
-4. AIがGitHubへPull Requestを作成する
-5. 人がPull Requestを確認する
-6. 問題なければ人がAIへマージを依頼する
-7. AIがPull Requestをマージする
-8. AIがその版のWindows x64自己完結ZIPをダウンロード可能にする
+4. **バージョン変更を含むPRでは、AIがREADME.mdの変更履歴へその版の変更点を追記する**
+5. AIがGitHubへPull Requestを作成する
+6. 人がPull Requestを確認する
+7. 問題なければ人がAIへマージを依頼する
+8. AIがPull Requestをマージする
+9. AIがその版のWindows x64自己完結ZIPをダウンロード可能にする
 
-## v0.1.12 の主な変更
+## 変更履歴
 
-- `:set ic` / `:set ignorecase` で大文字・小文字を区別しない検索
-- `:set noic` / `:set noignorecase` で大文字・小文字を区別する既定動作へ戻す
-- `:set ic?` で現在値を確認
-- 通常テキスト検索とバイナリTEXT検索の両方で同じ `ignorecase` を共有
-- 通常テキスト検索では `\c` / `\C` による検索単位のcase指定にも対応
-- バイナリモードでも `:` COMMAND入力を利用可能。`:set ic` / `:set noic` を実行可能
-- `:q` / `:q!` / `:wq` / `:x` / `:e ファイル` / `:e! ファイル` / `:saveas ファイル` / `:w!` を追加
-- `:d` / `:delete`、`:s` / `:substitute` の基本形を追加
-- COMMAND履歴と検索履歴を分離し、入力中の `↑` / `↓` で再利用可能
-- 既存の `:y3`、共有レジスタ、バイナリvi移動・検索を維持
+### v0.1.19
 
-## 検索と `ignorecase`
+- 起動時の既定を参照モードから**編集モード**へ変更
+- `Ctrl+Shift+J` / `Ctrl+Shift+M` をワークスペース側で一元処理し、現在選択中タブだけを対象化
+- JSON整形で日本語を `\uXXXX` 化せず、そのまま読みやすく保持
+- Markdown Viewerへ `j/k`, `Ctrl+F/B`, `Ctrl+D/U`, `gg/G` を追加
+- Markdown Viewerへ `/`, `?`, `n`, `N` 検索と `:set ic` / `:set noic` を追加
+- Markdown Viewerではブラウザ標準ショートカットよりvi操作を優先
+- `Ctrl+マウスホイール` のズームをデバウンスし、連続再描画による波打ちを抑制
+- ズーム時にテキスト編集画面の表示先頭行、Markdown Viewerのスクロール比率を可能な限り維持
 
-既定ではVimと同じく大文字・小文字を区別します。
+### v0.1.18
 
-```text
-:set ic
-```
+- v0.1.17で発生した `:` COMMANDモード入力回帰を修正
+- JISキーボードで `:` が `;` motionとして誤認され得るOEMキー依存処理を撤廃
+- `:` `/` `?` は従来のCOMMAND/検索入力を必ず優先
+- JSON整形の参照モード判定を `Scintilla.ReadOnly` ではなく実際の参照モード状態に修正
+- 参照モードOFFなのにReadOnlyが残った場合は編集可能状態へ復旧して整形
 
-で `ignorecase` をONにすると、たとえば `/hello` で `Hello` / `HELLO` / `hello` を検索できます。
+### v0.1.17
 
-```text
-:set noic
-:set ic?
-```
+- compactな1行JSONの整形を回帰テスト化
+- 厳密JSON解析失敗時のみ、文字列外のBOM、Unicode空白、数値符号直後の空白、Unicode符号を安全に正規化
+- quoted stringの内容は補正対象外
+- Vim 9.2 `motion.txt` を基準に主要カーソル移動を拡張
+- `%` で `()[]{}` の対応括弧へ移動、`N%` でファイル内割合位置へ移動
+- `f/F/t/T`, `;/,`, `ge/gE`, `(`/`)`, `{`/`}`, `H/M/L`, `+/-/_/|`, `Ctrl+E/Y` を追加
+- `5j`, `3w`, `10G`, `50%`, `3|`, `2gg` など数値プレフィックス対応
 
-でOFFまたは現在値の確認ができます。通常テキスト検索では検索パターンの `\c` でその検索だけcase-insensitive、`\C` でcase-sensitiveにできます。
+### v0.1.16
 
-バイナリモードでも `:` を押して `:set ic` / `:set noic` を指定できます。TEXT検索は現在選択中の文字コードでバイト列化し、ASCII英字の大文字・小文字を無視して検索します。`hex:4D 5A` のRAW HEX検索は常に完全一致で、`ignorecase` の対象外です。
+- X/Y座標表示をToolStripStatusLabelから分離
+- StatusStrip右端へ通常のWinForms Labelとして重ね、ToolStrip overflowに依存しない構造へ変更
+- リサイズやカーソル移動でも右下の `X=... Y=...` を維持
 
-## `:` COMMANDモード
+### v0.1.15
 
-NORMALモードで `:` を押すと画面下部のCOMMAND入力欄へ移ります。v0.1.12では、単一バッファのGUIエディタとして意味のある日常的なExコマンドをVimの挙動へ近づけています。
+- StatusStripのスペーサーを整理し、座標表示を右端へ固定
+- 拡張子別シンタックス強調を追加
+- Markdown、JSON、XML、C#、Python、JavaScript、TypeScript、YAMLに対応
+- Markdownの `#`〜`######` 見出しを太字・サイズ差で強調
+- Save Asで拡張子が変わった場合もハイライトを再判定
 
-| コマンド | 動作 |
-|---|---|
-| `:set ic` / `:set ignorecase` | 検索時に大文字・小文字を区別しない |
-| `:set noic` / `:set noignorecase` | 大文字・小文字を区別する |
-| `:set ic?` | `ignorecase` の現在値を表示 |
-| `:q` | 未保存変更がなければ終了。未保存なら終了しない |
-| `:q!` | 未保存変更を破棄して終了 |
-| `:w` / `:w!` | 現在ファイルを保存 |
-| `:w ファイル名` | 指定ファイルへコピーを書き出す。現在バッファ名は変更しない |
-| `:w! ファイル名` | 既存ファイルでも強制的にコピーを書き出す |
-| `:saveas ファイル名` / `:saveas! ファイル名` | 保存後、現在バッファのファイル名も変更 |
-| `:wq` / `:wq!` | 保存して終了 |
-| `:x` / `:xit` | 変更がある場合だけ保存して終了 |
-| `:e ファイル名` | 指定ファイルを開く。未保存変更がある場合は拒否 |
-| `:e! ファイル名` | 未保存変更を破棄して指定ファイルを開く |
-| `:e!` | 現在ファイルを強制再読込 |
-| `:e#` / `:e #` | alternate fileを開く |
-| `:120` / `:$` | 指定行 / 最終行へ移動 |
-| `:y3` | カーソル行から3行を無名レジスタへyank |
-| `:y a 3` | カーソル行から3行をレジスタ `a` へyank |
-| `:5y a` / `:5,10y a` / `:%y a` | 指定行または範囲をyank |
-| `:pu a` / `:20pu a` / `:0pu a` | レジスタ内容をput |
-| `:d` / `:2,5delete` | 現在行 / 範囲を削除し、削除行をレジスタへ保存 |
-| `:s/foo/bar/` | 現在行の最初の一致を置換 |
-| `:%s/foo/bar/g` | 全行で全一致を置換 |
-| `:%s/foo/bar/gi` | 全行・全一致をcase-insensitiveで置換 |
-| `:%s/foo/bar/gI` | `ignorecase` がONでもcase-sensitiveで置換 |
-| `:&` | 直前のsubstituteを繰り返す |
+### v0.1.14
 
-`substitute` は.NET正規表現を用いたVim互換の基本サブセットです。Vim固有の正規表現構文を完全に再現するものではありません。
+- COMMAND入力中の `:q` / `:q!` / `:wq` / `:x` 等で埋め込みタブを閉じた際の `ObjectDisposedException` を修正
+- 埋め込みMainFormのCloseを次のWinForms UIメッセージへ遅延
+- 右下座標表示を `X=桁  Y=行` の1始まりへ統一
 
-### COMMAND / 検索履歴
+### v0.1.13
 
-`:`, `/`, `?` の入力中に `↑` / `↓` を押すと履歴を呼び出せます。COMMAND履歴と検索履歴は別々に保持します。
+- 64MiB以上のファイルを自動的にLarge Fileモードへ切替
+- `RandomAccess.Read` と疎な行チェックポイントにより、巨大ファイルを全文メモリ展開せず閲覧
+- Large Fileモードへ `j/k`, `Ctrl+F/B`, `Ctrl+D/U`, `gg/G`, `/ ? n N`, `:set ic/noic` を追加
+- 複数タブを追加。各タブでテキストバッファ、Undo履歴、vi状態を分離
+- `Ctrl+T`, `Ctrl+W`, `Ctrl+Tab`, `Ctrl+Shift+Tab` を追加
+- 最近使ったファイルを `%APPDATA%\vi_text_editor\recent-files.json` に最大15件保存
+- `Ctrl+Shift+J` でJSON整形
+- `Ctrl+Shift+M` でMarkdownプレビューを別タブ表示
 
-**v0.1.12での重要な互換性変更:** v0.1.11以前の `:w ファイル名` はSave As相当でしたが、Vimに合わせて「指定ファイルへ書き出すだけで現在のバッファ名は変えない」動作へ変更しました。現在のファイル名も変更したい場合は `:saveas ファイル名` を使います。
+### v0.1.12
 
-## バイナリモード
+- `:set ic` / `:set ignorecase`、`:set noic`、`:set ic?` を追加
+- 通常検索とバイナリTEXT検索で共通のignorecaseを利用
+- 通常検索の `\c` / `\C` override対応
+- `:q`, `:q!`, `:w`, `:w!`, `:wq`, `:x`, `:e`, `:e!`, `:e#`, `:saveas` を追加
+- `:d` / `:delete`、`:s` / `:substitute`、`:&` を追加
+- COMMAND履歴と検索履歴を分離し、`↑/↓` で再利用
+- `:w ファイル名` をVimに合わせ「コピー書き出し」に変更し、現在バッファ名を変える場合は `:saveas` を使用
 
-`表示` → `バイナリモード` で現在の保存済みファイルを生バイト列として閲覧できます。`ファイル` → `バイナリとして開く...` では、通常のテキストデコードを経由せずRAWバイトとして直接開きます。既存のテキスト編集バッファは保持されます。
+### v0.1.11
 
-1行16バイトで `OFFSET / HEX / TEXT` の3列を表示します。TEXT欄の文字コードは `自動判定 / UTF-8 / Shift_JIS / UTF-16 LE / UTF-16 BE / ASCII` から選択できます。日本語表示用にBIZ UDGothic / MS Gothic等の日本語対応等幅フォントを優先します。
+- COMMANDモードとNORMALモードで無名レジスタを共有
+- `:y3` 等でyankした内容をNORMALの `p/P` から利用可能
+- NORMALの `yy` を `:put` から利用可能
+- バイナリモードへ `j/k`, `Ctrl+F/B`, `Ctrl+D/U`, `gg/G`, `/ ? n N` を追加
+- バイナリ検索へ文字コード対応TEXT検索と `hex:4D 5A 90` 形式のRAW HEX検索を追加
+- 検索をストリーミング化し、ファイル全体をメモリ展開しない方式を維持
 
-自動判定ではBOMを優先し、BOMがなければUTF-8として妥当か確認し、妥当でなければShift_JISを候補にします。ファイル全体を巨大なHEX文字列へ変換せず、DataGridViewのVirtualModeと `RandomAccess.Read` で必要な行だけ読み込みます。
+### v0.1.10
 
-### バイナリモードのvi操作
+- バイナリビューアのASCII列をTEXT列へ変更
+- `自動判定 / UTF-8 / Shift_JIS / UTF-16 LE / UTF-16 BE / ASCII` を選択可能
+- BOM優先、次にUTF-8妥当性、最後にShift_JIS候補という自動判定
+- 日本語対応等幅フォントを優先
+- `:y3`, `:y 3`, `:yank 3`, `:y a 3` のcount yankを追加
 
-| キー | 動作 |
-|---|---|
-| `j` / `k` | 1行下 / 上へ移動。J/Kも同じ動作 |
-| `Ctrl+F` / `Ctrl+B` | 約1画面下 / 上へ移動 |
-| `Ctrl+D` / `Ctrl+U` | 約半画面下 / 上へ移動 |
-| `gg` / `G` | ファイル先頭 / 末尾へ移動 |
-| `/文字列` / `?文字列` | 前方 / 後方TEXT検索 |
-| `n` / `N` | 同方向 / 逆方向に検索を繰り返す |
-| `/hex:4D 5A 90` | RAWバイト列検索 |
-| `:` | COMMAND入力。`:set ic` / `:set noic` 等を利用可能 |
+### v0.1.9
 
-検索は64KB単位で `RandomAccess.Read` し、ファイル全体をメモリへ展開しません。
+- Vimの `.` で直前の変更を繰り返す機能を追加
+- `p/P`, `x`, `dd`, delete/change、INSERT入力、IME確定入力、Backspaceをrepeat可能に拡張
+- vi移動・削除で全文 `Text` を毎回取得しないようScintillaネイティブ位置APIへ移行
+- Scintillaの表示キャッシュを改善
+- 仮想化バイナリビューアを追加
+- `OFFSET / HEX / ASCII(TEXT)` を1行16バイトで表示し、`RandomAccess.Read` を利用
 
-## レジスタ共有とyank / paste
+### v0.1.8
 
-COMMANDモードの `:yank` とNORMALモードの `yy` / delete / pasteは同じ `ViRegisterStore` を利用します。
+- `dw/dW`, `de/dE`, `d$`, `D` を追加
+- deleteした文字列を無名レジスタへ保持
+- `:e!`, `:e#`, `:q!`, `:w` などExファイル操作を追加
+- alternate file管理を追加
+- Windows x64自己完結ZIPをマージ後に提示する運用をハーネスへ追加
 
-```text
-:y3
-p
-```
+### v0.1.7
 
-で、カーソル行から3行をyankした後、NORMALモードの `p` で貼り付けられます。逆にNORMALモードで `yy` した内容を `:put` から利用できます。
+- `cw/cW/ce/cE/c$` を追加し、削除後INSERTへ入るchange操作を実装
+- changeで削除した文字列を無名レジスタへ保持
+- ScintillaのSavePointを利用してDirty状態を追跡
+- Undoで保存時点へ戻るとタイトルの `*` を消し、Redoで離れると再表示
 
-参照モード中はyank・検索・`:set` は利用できますが、文書を変更する `p/P`、`:put`、`:delete`、`:substitute`、`.` などは抑止します。
+### v0.1.6
 
-## `.` による直前変更の繰り返し
+- `^` を行の最初の非空白文字への移動として安定化
+- COMMANDモード `:` と `:行番号` / `:$` を整備
+- Ex形式の `:[range]y[ank] [register]` と `:[line]pu[t] [register]` を追加
+- 名前付きレジスタと、大文字レジスタへの追記を追加
+- 参照モードでは移動・検索・yankを許可し、putを抑止
+- 行・桁表示の計算をScintillaネイティブAPIへ変更し、応答性を改善
+- `Ctrl+D/U`, `/ ? n N` などv0.1.5で進めた機能を正式統合
 
-NORMALモードで `.` を押すと直前の「変更」を繰り返します。移動や単純なyankは変更として記録されません。
+### v0.1.5（v0.1.6へ統合された中間開発版）
 
-- `yy` → `p` → `.` : putをもう一度実行
-- `x` → `.` : 1文字削除をもう一度実行
-- `dw` → `.` : word削除をもう一度実行
-- `cw` → 文字入力 → `Esc` → `.` : change + INSERTした文字列を再適用
-- `i` → 文字入力 → `Esc` → `.` : INSERTした変更を繰り返す
+- `Ctrl+D` / `Ctrl+U` の半画面移動
+- `Ctrl+F` / `Ctrl+B` でカーソルも画面移動へ追従
+- `/` / `?` 検索と `n/N` の繰り返し
+- `:行番号` による行ジャンプ
+- COMMAND入力欄の基盤を追加
+
+この版の作業は後続のPR #6で **v0.1.6** としてまとめて正式マージされました。
+
+### v0.1.4
+
+- NORMALをブロックカーソル、INSERTを3px幅の縦カーソルへ変更
+- `BIZ UDGothic` を優先する日本語等幅フォント選択
+- `w/b` をVimのword境界に近づけ、`W/B` を追加
+- `Ctrl+F/B` のページ移動を追加
+
+### v0.1.3
+
+- 誤編集防止用の参照モードを追加。当時は既定ON
+- 参照モード中はScintillaをReadOnly化し、vi編集・Undo/Redoを抑止
+- ファイル読込・新規作成直後にUndoバッファをリセット
+- Undoを繰り返してもファイル読込前の空文書へ戻らないよう下限を設定
+
+※ v0.1.19で既定は編集モードへ変更され、参照モードは任意でONにする方式になりました。
+
+### v0.1.2
+
+- ScintillaのIME interactionを `SC_IME_INLINE` に設定
+- 日本語IMEの変換中文字列をキャレット位置へ直接描画
+- Scintillaのハンドル再生成時にもIME設定を再適用
+
+### v0.1.1
+
+- Windows x64 self-contained publishを追加
+- GitHub Actionsで `vi_text_editor-win-x64` Artifactを自動生成
+- `run_windows.cmd` が配布版EXEを優先して起動
+- `publish_windows_portable.cmd` を追加
+- 通常利用では.NET Runtime / SDKを別途インストールせず実行可能
+
+### v0.1.0
+
+- 初期実装
+- .NET 10 + WinForms + Scintilla5.NET 7.0.0
+- viキー処理を `ViTextEditor.Core` へ分離
+- NORMAL / INSERT、`h j k l`, `w b e`, `0 ^ $`, `gg G`
+- `x`, `dd`, `yy`, `p/P`, `u`, `Ctrl+R`, `i/a/o/O`
+- INSERT中はIME/Scintillaへ通常入力を渡す設計
+- UTF-8 / UTF-8 BOM / UTF-16 / Shift_JISの読み込み・保存
+- 未保存変更の終了確認
+- ハーネス、Definition of Done、Known Issues、GitHub Actionsを導入
 
 ## 現在利用できる主なvi操作
 
@@ -141,16 +212,133 @@ NORMALモードで `.` を押すと直前の「変更」を繰り返します。
 | `o` / `O` | 下／上に行を追加してINSERT |
 | `h` `j` `k` `l` | カーソル移動 |
 | `0` / `^` / `$` | 行頭 / 最初の非空白 / 行末 |
-| `w` / `b` / `e`、`W` / `B` / `E` | word / WORD単位移動 |
-| `cw` / `ce` / `cW` / `cE` / `c$` | changeしてINSERT |
-| `dw` / `dW` / `de` / `dE` / `d$` / `D` / `dd` | delete |
-| `.` | 直前の変更を繰り返す |
-| `Ctrl+F` / `Ctrl+B` | 約1画面分移動 |
-| `Ctrl+D` / `Ctrl+U` | 約半画面分移動 |
+| `w/b/e`, `W/B/E`, `ge/gE` | word / WORD単位移動 |
+| `%` | `()[]{}` の対応括弧へ移動。数値付き `N%` はファイル内割合位置 |
+| `f/F/t/T` | 行内の指定文字へ移動 |
+| `;` / `,` | 直前のf/F/t/Tを同方向 / 逆方向に繰り返す |
+| `(` / `)` | 前 / 次の文へ移動 |
+| `{` / `}` | 前 / 次の段落へ移動 |
+| `H/M/L` | 画面上 / 中央 / 下へ移動 |
+| `+/-/_/|` | 行・桁単位の移動 |
+| `Ctrl+F/B` | 約1画面下 / 上 |
+| `Ctrl+D/U` | 約半画面下 / 上 |
+| `Ctrl+E/Y` | 画面を1行スクロール |
+| `gg/G` | ファイル先頭 / 最終行 |
 | `/文字列` / `?文字列` / `n` / `N` | 検索と繰り返し |
-| `gg` / `G` | ファイル先頭 / 最終行 |
-| `x` / `yy` / `p` / `P` | 1文字削除 / yank / paste |
+| `cw/cW/ce/cE/c$` | changeしてINSERT |
+| `dw/dW/de/dE/d$`, `D`, `dd` | delete |
+| `x/yy/p/P` | 1文字削除 / yank / paste |
+| `.` | 直前の変更を繰り返す |
 | `u` / `Ctrl+R` | Undo / Redo |
+| `5j`, `3w`, `10G`, `2gg` 等 | 数値プレフィックス付き移動 |
+
+## `:` COMMANDモード
+
+NORMALモードで `:` を押すと画面下部のCOMMAND入力欄へ移ります。
+
+| コマンド | 動作 |
+|---|---|
+| `:set ic` / `:set ignorecase` | 検索時に大文字・小文字を区別しない |
+| `:set noic` / `:set noignorecase` | 大文字・小文字を区別する |
+| `:set ic?` | `ignorecase` の現在値を表示 |
+| `:q` / `:q!` | 通常終了 / 未保存変更を破棄して終了 |
+| `:w` / `:w!` | 現在ファイルを保存 |
+| `:w ファイル名` | 指定ファイルへコピーを書き出し。現在バッファ名は変更しない |
+| `:saveas ファイル名` / `:saveas! ファイル名` | 保存後、現在バッファのファイル名も変更 |
+| `:wq` / `:wq!` | 保存して終了 |
+| `:x` / `:xit` | 変更がある場合だけ保存して終了 |
+| `:e ファイル名` | 指定ファイルを開く。未保存変更がある場合は拒否 |
+| `:e! ファイル名` / `:e!` | 強制的に開く / 現在ファイルを再読込 |
+| `:e#` | alternate fileを開く |
+| `:120` / `:$` | 指定行 / 最終行へ移動 |
+| `:y3` / `:y a 3` | カーソル行から複数行をyank |
+| `:5y a` / `:5,10y a` / `:%y a` | 指定行または範囲をyank |
+| `:pu a` / `:20pu a` / `:0pu a` | レジスタ内容をput |
+| `:d` / `:2,5delete` | 現在行 / 範囲を削除してレジスタへ保存 |
+| `:s/foo/bar/` | 現在行の最初の一致を置換 |
+| `:%s/foo/bar/g` | 全行で全一致を置換 |
+| `:&` | 直前のsubstituteを繰り返す |
+
+`substitute` は.NET正規表現を用いたVim互換の基本サブセットです。Vim固有の正規表現構文を完全に再現するものではありません。
+
+## タブと最近使ったファイル
+
+- `Ctrl+T`: 新しいタブ
+- `Ctrl+W`: 現在のタブを閉じる
+- `Ctrl+Tab`: 次のタブ
+- `Ctrl+Shift+Tab`: 前のタブ
+- 最近使ったファイルは最大15件保存
+
+## Large Fileモード
+
+64MiB以上のファイルは自動的に読み取り専用Large Fileモードで開きます。`RandomAccess.Read` と疎な行インデックスを利用し、ファイル全体を巨大なbyte配列やstringへ展開しません。
+
+利用可能な主な操作:
+
+- `j/k`
+- `Ctrl+F/B`
+- `Ctrl+D/U`
+- `gg/G`
+- `/ ? n N`
+- `:set ic` / `:set noic`
+
+## JSON整形
+
+`Ctrl+Shift+J` または `ツール > JSONを整形` を使用します。
+
+- compactな1行JSONに対応
+- 現在の改行コードを維持
+- 日本語は `\uXXXX` にせず読みやすい文字のまま保持
+- 参照モードでは変更しない
+- 軽微な機械生成JSONの表記揺れは、quoted stringを変更しない範囲で補正して再解析
+
+## Markdownプレビュー
+
+`Ctrl+Shift+M` または `ツール > Markdownプレビュー` で別タブに表示します。元のMarkdown本文は変更しません。
+
+Viewerでも基本操作をviに統一しています。
+
+- `j/k`
+- `Ctrl+F/B`
+- `Ctrl+D/U`
+- `gg/G`
+- `/ ? n N`
+- `:set ic` / `:set noic`
+
+## シンタックス強調
+
+現在は以下を拡張子から自動判定します。
+
+- Markdown: `.md`, `.markdown`
+- JSON: `.json`, `.jsonl`
+- XML: `.xml`, `.xaml`, `.svg`
+- C#: `.cs`, `.csx`
+- Python: `.py`, `.pyw`
+- JavaScript: `.js`, `.jsx`, `.mjs`, `.cjs`
+- TypeScript: `.ts`, `.tsx`
+- YAML: `.yaml`, `.yml`
+
+Markdownの見出しは太字・サイズ差で強調します。ハイライト処理は文書本文とUndo履歴を変更しません。
+
+## バイナリモード
+
+`表示 > バイナリモード`、または `ファイル > バイナリとして開く...` でRAWバイトを閲覧できます。
+
+- `OFFSET / HEX / TEXT` の3列
+- 1行16バイト
+- TEXT文字コード: 自動判定 / UTF-8 / Shift_JIS / UTF-16 LE / UTF-16 BE / ASCII
+- DataGridView VirtualMode + `RandomAccess.Read`
+- 日本語対応等幅フォントを優先
+
+主なvi操作:
+
+- `j/k`
+- `Ctrl+F/B`
+- `Ctrl+D/U`
+- `gg/G`
+- `/文字列`, `?文字列`, `n/N`
+- `/hex:4D 5A 90`
+- `:set ic` / `:set noic`
 
 ## Windowsで通常利用する方法（.NETのインストール不要）
 
