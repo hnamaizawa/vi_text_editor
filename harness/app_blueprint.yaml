@@ -1,6 +1,6 @@
 project:
   name: vi_text_editor
-  version: 0.1.18
+  version: 0.1.19
   platform: windows
   ui: winforms
   editor_component: Scintilla5.NET
@@ -70,9 +70,14 @@ non_negotiable_invariants:
   - colon_saveas_must_write_and_rename_current_buffer
   - colon_write_bang_must_allow_overwriting_existing_target
   - alternate_file_must_track_previous_current_file
+  - editor_must_start_in_editable_mode_by_default
+  - reference_mode_must_remain_available_as_an_explicit_opt_in
   - reference_mode_must_allow_navigation_yank_set_and_search_but_block_mutating_ex_commands
+  - reference_mode_must_block_document_modification
   - workspace_must_support_multiple_document_tabs_without_sharing_text_buffers
   - workspace_ctrl_t_ctrl_w_and_ctrl_tab_must_manage_tabs
+  - workspace_json_and_markdown_shortcuts_must_target_only_the_selected_editor_tab
+  - inactive_tab_toolstrip_shortcuts_must_not_execute_document_actions
   - recent_files_must_persist_under_user_appdata_and_deduplicate_paths
   - files_at_or_above_64_mib_must_open_in_large_file_mode_automatically
   - large_file_mode_must_not_read_the_entire_file_into_a_string_or_byte_array
@@ -91,7 +96,13 @@ non_negotiable_invariants:
   - json_formatting_must_be_undoable_and_refuse_reference_mode
   - json_formatting_reference_mode_decision_must_use_reference_mode_state_not_scintilla_readonly
   - json_formatting_must_preserve_the_active_document_newline_style
+  - json_formatting_must_preserve_readable_japanese_unicode_instead_of_forcing_u_escape_sequences
   - markdown_preview_must_render_in_a_separate_tab_without_modifying_source_text
+  - markdown_preview_must_support_j_k_ctrl_f_ctrl_b_ctrl_d_ctrl_u_gg_and_G_navigation
+  - markdown_preview_must_support_slash_question_n_and_N_search
+  - markdown_preview_must_honor_set_ic_and_set_noic_for_search
+  - ctrl_mouse_wheel_zoom_must_be_debounced_to_avoid_repeated_reflow_and_waving
+  - ctrl_mouse_wheel_zoom_must_preserve_the_document_view_anchor_as_much_as_possible
   - status_position_updates_must_not_scan_entire_document_per_keypress
   - normal_vi_motion_must_use_native_position_apis_instead_of_full_document_copies
   - scintilla_layout_cache_must_cover_visible_page
@@ -112,8 +123,6 @@ non_negotiable_invariants:
   - direct_binary_view_must_preserve_the_existing_text_buffer
   - normal_mode_caret_must_be_visually_distinct
   - editor_font_must_prefer_japanese_monospaced_font
-  - reference_mode_must_be_enabled_by_default
-  - reference_mode_must_block_document_modification
   - undo_must_not_go_before_initial_loaded_document_state
   - undo_reaching_save_point_must_clear_dirty_indicator
   - redo_leaving_save_point_must_restore_dirty_indicator
