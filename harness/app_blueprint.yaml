@@ -11,12 +11,14 @@ development_model:
   - human_describes_requirements_in_natural_language
   - ai_changes_only_necessary_files
   - ai_runs_regression_tests_and_build_checks
+  - ai_updates_readme_change_history_for_every_versioned_pull_request_before_merge
   - ai_opens_pull_request
   - human_reviews_pull_request
   - ai_merges_only_after_human_requests_merge
   - ai_provides_downloadable_portable_zip_after_successful_merge
 
 non_negotiable_invariants:
+  - versioned_pull_requests_must_update_readme_change_history_before_merge
   - normal_mode_must_not_insert_printable_text
   - insert_mode_must_allow_normal_ime_input
   - ime_composition_must_track_editor_caret
