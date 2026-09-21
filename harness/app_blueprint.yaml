@@ -1,6 +1,6 @@
 project:
   name: vi_text_editor
-  version: 0.1.17
+  version: 0.1.18
   platform: windows
   ui: winforms
   editor_component: Scintilla5.NET
@@ -33,6 +33,8 @@ non_negotiable_invariants:
   - ctrl_e_and_ctrl_y_must_scroll_view_without_editing_text
   - numeric_prefixes_must_apply_to_normal_mode_cursor_motions
   - pending_find_target_must_be_consumed_as_a_motion_character_not_an_edit_command
+  - supplemental_motion_routing_must_never_intercept_colon_slash_or_question_command_prefixes
+  - punctuation_motions_must_be_routed_from_the_actual_input_character_not_layout_dependent_oem_keycodes
   - change_word_commands_must_delete_target_and_enter_insert_mode
   - delete_word_commands_must_support_dw_dW_de_dE_and_line_end_delete
   - dot_must_repeat_the_last_change_not_plain_navigation_or_yank
@@ -87,6 +89,7 @@ non_negotiable_invariants:
   - json_formatting_may_normalize_bom_unicode_whitespace_and_separated_numeric_signs
   - json_formatting_normalization_must_not_change_quoted_string_contents
   - json_formatting_must_be_undoable_and_refuse_reference_mode
+  - json_formatting_reference_mode_decision_must_use_reference_mode_state_not_scintilla_readonly
   - json_formatting_must_preserve_the_active_document_newline_style
   - markdown_preview_must_render_in_a_separate_tab_without_modifying_source_text
   - status_position_updates_must_not_scan_entire_document_per_keypress
