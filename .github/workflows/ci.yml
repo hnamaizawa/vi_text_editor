@@ -44,3 +44,37 @@ jobs:
           name: vi_text_editor-win-x64
           path: artifacts/vi_text_editor-win-x64/
           if-no-files-found: error
+
+      - name: Publish single-file Windows x64 build
+        run: >-
+          dotnet publish src/ViTextEditor/ViTextEditor.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          --output artifacts/vi_text_editor-win-x64-single-file
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          -p:DebugType=None
+          -p:DebugSymbols=false
+      - name: Verify single-file executable
+        shell: pwsh
+        run: |
+          $outputDir = "artifacts/vi_text_editor-win-x64-single-file"
+          $files = @(Get-ChildItem -Path $outputDir -Recurse -File)
+          if ($files.Count -ne 1) {
+            $names = ($files | ForEach-Object { $_.FullName }) -join "`n"
+            throw "Single-file publish must contain exactly one file, but found $($files.Count):`n$names"
+          }
+          if ($files[0].Name -ne "vi_text_editor.exe") {
+            throw "Single-file publish produced unexpected file: $($files[0].Name)"
+          }
+          if ($files[0].Length -le 0) {
+            throw "Single-file executable is empty."
+          }
+      - name: Upload single-file Windows executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: vi_text_editor-win-x64-single-file
+          path: artifacts/vi_text_editor-win-x64-single-file/vi_text_editor.exe
+          if-no-files-found: error
