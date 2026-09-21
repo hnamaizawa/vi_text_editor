@@ -81,6 +81,7 @@ internal sealed class EditorWorkspaceForm : Form
         _tabs.TabPages.Add(page);
         _sessions[page] = new WorkspaceTab(WorkspaceTabKind.MarkdownPreview, null, null, preview, null);
         _tabs.SelectedTab = page;
+        preview.FocusViewer();
         UpdateWorkspaceTitle();
     }
 
@@ -127,16 +128,26 @@ internal sealed class EditorWorkspaceForm : Form
         var session = new WorkspaceTab(WorkspaceTabKind.Editor, path, child, null, null);
         _sessions[page] = session;
         MainFormWorkspaceBridge.Install(child, this);
+        ConfigureEmbeddedEditor(child);
         child.FormClosing += (_, e) => DeferEmbeddedEditorClose(child, e);
-        child.FormClosed += (_, _) => RemoveClosedEditorTab(page);
+        child.FormClosed += (_, _) =>
+        {
+            session.ZoomFilter?.Dispose();
+            session.ZoomFilter = null;
+            RemoveClosedEditorTab(page);
+        };
         child.TextChanged += (_, _) => UpdateTabTitle(page, session);
         child.Show();
         ImeSupport.Configure(child);
+
+        if (MainFormWorkspaceBridge.GetEditor(child) is { } editor)
+            session.ZoomFilter = SmoothEditorZoom.Attach(editor);
 
         if (path is not null)
         {
             if (!MainFormWorkspaceBridge.OpenPath(child, path))
             {
+                session.ZoomFilter?.Dispose();
                 child.Dispose();
                 _sessions.Remove(page);
                 _tabs.TabPages.Remove(page);
@@ -151,6 +162,74 @@ internal sealed class EditorWorkspaceForm : Form
         UpdateTabTitle(page, session);
         if (select) _tabs.SelectedTab = page;
         UpdateWorkspaceTitle();
+    }
+
+    private static void ConfigureEmbeddedEditor(MainForm child)
+    {
+        var menu = child.MainMenuStrip;
+        if (menu is null) return;
+
+        // v0.1.19: normal startup is editable. Reference mode remains available as
+        // an explicit opt-in safety mode from the Mode menu.
+        var mode = menu.Items.OfType<ToolStripMenuItem>()
+            .FirstOrDefault(item => item.Text.Contains("モード", StringComparison.Ordinal));
+        var reference = mode?.DropDownItems.OfType<ToolStripMenuItem>()
+            .FirstOrDefault(item => item.Text.Contains("参照モード", StringComparison.Ordinal));
+        if (reference?.Checked == true) reference.Checked = false;
+
+        // Per-tab ToolStrip shortcut processing can resolve a hidden/inactive tab.
+        // Show the shortcut text, but let the workspace route the actual key to the
+        // selected tab exactly once.
+        var tools = menu.Items.OfType<ToolStripMenuItem>()
+            .FirstOrDefault(item => item.Text.Contains("ツール", StringComparison.Ordinal));
+        if (tools is not null)
+        {
+            foreach (var item in tools.DropDownItems.OfType<ToolStripMenuItem>())
+            {
+                if (item.Text.StartsWith("JSONを整形", StringComparison.Ordinal))
+                {
+                    item.ShortcutKeys = Keys.None;
+                    item.ShortcutKeyDisplayString = "Ctrl+Shift+J";
+                }
+                else if (item.Text.StartsWith("Markdownプレビュー", StringComparison.Ordinal))
+                {
+                    item.ShortcutKeys = Keys.None;
+                    item.ShortcutKeyDisplayString = "Ctrl+Shift+M";
+                }
+            }
+        }
+
+        var help = menu.Items.OfType<ToolStripMenuItem>()
+            .FirstOrDefault(item => item.Text.Contains("ヘルプ", StringComparison.Ordinal));
+        if (help is not null)
+        {
+            ReplaceHelpItem(help, item => item.Text.Contains("バージョン情報", StringComparison.Ordinal),
+                new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show(
+                    child,
+                    "vi_text_editor v0.1.19\nEdit-by-default / Unicode JSON / Markdown vi viewer / smooth zoom",
+                    "バージョン情報",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information)));
+            ReplaceHelpItem(help, item => item.Text.Contains("ワークスペース操作", StringComparison.Ordinal),
+                new ToolStripMenuItem("v0.1.19 ワークスペース操作", null, (_, _) => MessageBox.Show(
+                    child,
+                    "既定: 編集モード（参照モードは任意でON）\nCtrl+Shift+J: JSON整形\nCtrl+Shift+M: Markdownプレビュー\n\nMarkdown vi: j/k, Ctrl+F/B/D/U, gg/G, / ? n/N, :set ic/noic\nCtrl+マウスホイール: デバウンスされた拡大縮小",
+                    "ワークスペース操作",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information)));
+        }
+    }
+
+    private static void ReplaceHelpItem(ToolStripMenuItem parent, Func<ToolStripMenuItem, bool> predicate, ToolStripMenuItem replacement)
+    {
+        for (var i = 0; i < parent.DropDownItems.Count; i++)
+        {
+            if (parent.DropDownItems[i] is not ToolStripMenuItem item || !predicate(item)) continue;
+            parent.DropDownItems.RemoveAt(i);
+            item.Dispose();
+            parent.DropDownItems.Insert(i, replacement);
+            return;
+        }
     }
 
     private void DeferEmbeddedEditorClose(MainForm editor, FormClosingEventArgs e)
@@ -211,6 +290,7 @@ internal sealed class EditorWorkspaceForm : Form
             return;
         }
 
+        session.ZoomFilter?.Dispose();
         session.LargeViewer?.CloseFile();
         _sessions.Remove(page);
         _tabs.TabPages.Remove(page);
@@ -257,7 +337,40 @@ internal sealed class EditorWorkspaceForm : Form
         if (keyData == (Keys.Control | Keys.W)) { CloseCurrentTab(); return true; }
         if (keyData == (Keys.Control | Keys.Tab)) { SelectNextTab(1); return true; }
         if (keyData == (Keys.Control | Keys.Shift | Keys.Tab)) { SelectNextTab(-1); return true; }
+
+        // Route workspace-wide tool shortcuts to the selected editor only. This avoids
+        // hidden tab MenuStrip shortcut collisions.
+        if (keyData == (Keys.Control | Keys.Shift | Keys.J) && InvokeActiveEditorTool("JSONを整形")) return true;
+        if (keyData == (Keys.Control | Keys.Shift | Keys.M) && InvokeActiveEditorTool("Markdownプレビュー")) return true;
+
+        if (_tabs.SelectedTab is { } selected &&
+            _sessions.TryGetValue(selected, out var session) &&
+            session.MarkdownPreview is { } preview &&
+            preview.HandleKey(keyData))
+        {
+            return true;
+        }
+
         return base.ProcessCmdKey(ref msg, keyData);
+    }
+
+    private bool InvokeActiveEditorTool(string startsWith)
+    {
+        if (_tabs.SelectedTab is not { } selected ||
+            !_sessions.TryGetValue(selected, out var session) ||
+            session.EditorForm is not { } form ||
+            form.IsDisposed)
+        {
+            return false;
+        }
+
+        var tools = form.MainMenuStrip?.Items.OfType<ToolStripMenuItem>()
+            .FirstOrDefault(item => item.Text.Contains("ツール", StringComparison.Ordinal));
+        var command = tools?.DropDownItems.OfType<ToolStripMenuItem>()
+            .FirstOrDefault(item => item.Text.StartsWith(startsWith, StringComparison.Ordinal));
+        if (command is null) return false;
+        command.PerformClick();
+        return true;
     }
 
     private void WorkspaceOnFormClosing(object? sender, FormClosingEventArgs e)
@@ -291,5 +404,6 @@ internal sealed class EditorWorkspaceForm : Form
         public MainForm? EditorForm { get; } = editorForm;
         public MarkdownPreviewControl? MarkdownPreview { get; } = markdownPreview;
         public LargeTextViewerControl? LargeViewer { get; } = largeViewer;
+        public IDisposable? ZoomFilter { get; set; }
     }
 }
