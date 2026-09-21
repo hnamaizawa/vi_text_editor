@@ -1,6 +1,6 @@
 project:
   name: vi_text_editor
-  version: 0.1.20
+  version: 0.1.21
   platform: windows
   ui: winforms
   editor_component: Scintilla5.NET
@@ -19,6 +19,7 @@ development_model:
 
 non_negotiable_invariants:
   - versioned_pull_requests_must_update_readme_change_history_before_merge
+  - error_and_warning_dialogs_must_not_play_system_effect_sounds
   - normal_mode_must_not_insert_printable_text
   - insert_mode_must_allow_normal_ime_input
   - ime_composition_must_track_editor_caret
