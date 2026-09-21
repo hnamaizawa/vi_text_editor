@@ -11,6 +11,7 @@ internal static class MainFormWorkspaceBridge
     private static readonly FieldInfo? FilePathField = typeof(MainForm).GetField("_filePath", BindingFlags.Instance | BindingFlags.NonPublic);
     private static readonly FieldInfo? NewLineField = typeof(MainForm).GetField("_newLine", BindingFlags.Instance | BindingFlags.NonPublic);
     private static readonly FieldInfo? ForceCloseField = typeof(MainForm).GetField("_forceClose", BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly FieldInfo? ReferenceModeField = typeof(MainForm).GetField("_referenceMode", BindingFlags.Instance | BindingFlags.NonPublic);
     private static readonly FieldInfo? ViField = typeof(MainForm).GetField("_vi", BindingFlags.Instance | BindingFlags.NonPublic);
     private static readonly FieldInfo? NavigationField = typeof(MainForm).GetField("_navigation", BindingFlags.Instance | BindingFlags.NonPublic);
     private static readonly MethodInfo? OpenFilePathMethod = typeof(MainForm).GetMethod("OpenFilePath", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -31,6 +32,8 @@ internal static class MainFormWorkspaceBridge
     public static string? GetFilePath(MainForm form) => FilePathField?.GetValue(form) as string;
 
     public static Scintilla? GetEditor(MainForm form) => FindControls<Scintilla>(form).FirstOrDefault();
+
+    private static bool IsReferenceMode(MainForm form) => ReferenceModeField?.GetValue(form) as bool? ?? true;
 
     public static void AllowDeferredClose(MainForm form)
     {
@@ -95,6 +98,7 @@ internal static class MainFormWorkspaceBridge
     {
         var existing = menu.Items.OfType<ToolStripMenuItem>().FirstOrDefault(item => item.Text.Contains("タブ", StringComparison.Ordinal));
         if (existing is not null) return;
+
         var tabs = new ToolStripMenuItem("タブ(&B)");
         tabs.DropDownItems.Add(new ToolStripMenuItem("新しいタブ", null, (_, _) => workspace.NewTab(), Keys.Control | Keys.T));
         tabs.DropDownItems.Add(new ToolStripMenuItem("現在のタブを閉じる", null, (_, _) => workspace.CloseCurrentTab(), Keys.Control | Keys.W));
@@ -118,11 +122,25 @@ internal static class MainFormWorkspaceBridge
     {
         var editor = GetEditor(form);
         if (editor is null || editor.IsDisposed) return;
-        if (editor.ReadOnly)
+
+        // Reference mode is an editor state, not the same thing as Scintilla.ReadOnly.
+        // The latter may be temporarily/stale true after view transitions, so it must
+        // never be used to decide whether the user enabled reference mode.
+        if (IsReferenceMode(form))
         {
             MessageBox.Show(form, "JSONを整形するには参照モードをOFFにしてください。", "vi_text_editor", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
+
+        if (!editor.Visible)
+        {
+            MessageBox.Show(form, "JSON整形はテキスト編集画面で実行してください。", "vi_text_editor", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        // If reference mode is OFF, the text editor is supposed to be writable.
+        // Repair a stale ReadOnly flag instead of falsely reporting reference mode.
+        if (editor.ReadOnly) editor.ReadOnly = false;
 
         var newline = NewLineField?.GetValue(form) as string ?? Environment.NewLine;
         if (!JsonFormattingService.TryFormat(editor.Text, newline, out var formatted, out var error))
@@ -139,16 +157,20 @@ internal static class MainFormWorkspaceBridge
             editor.ReplaceSelection(formatted);
             editor.GotoPosition(Math.Min(caret, editor.TextLength));
         }
-        finally { editor.EndUndoAction(); }
+        finally
+        {
+            editor.EndUndoAction();
+        }
     }
 
     private static void InstallHelpVersion(MenuStrip menu)
     {
         var help = menu.Items.OfType<ToolStripMenuItem>().FirstOrDefault(item => item.Text.Contains("ヘルプ", StringComparison.Ordinal));
         if (help is null) return;
+
         ReplaceMenuItem(help, item => item.Text.Contains("バージョン情報", StringComparison.Ordinal),
-            new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show("vi_text_editor v0.1.17\nJSON formatting / Vim cursor motions", "バージョン情報", MessageBoxButtons.OK, MessageBoxIcon.Information)));
-        help.DropDownItems.Add(new ToolStripMenuItem("v0.1.17 ワークスペース操作", null, (_, _) => MessageBox.Show(
+            new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show("vi_text_editor v0.1.18\nCOMMAND / JSON regression fix", "バージョン情報", MessageBoxButtons.OK, MessageBoxIcon.Information)));
+        help.DropDownItems.Add(new ToolStripMenuItem("v0.1.18 ワークスペース操作", null, (_, _) => MessageBox.Show(
             "Ctrl+T: 新しいタブ\nCtrl+W: タブを閉じる\nCtrl+Tab: 次のタブ\nCtrl+Shift+Tab: 前のタブ\n\n右下: X=桁 / Y=行（1始まり）\nJSON整形: Ctrl+Shift+J\nMarkdownプレビュー: Ctrl+Shift+M\n\nvi移動: % / f F t T / ; , / ( ) / { } / H M L / + - _ | / Ctrl+E Ctrl+Y\n移動には数値プレフィックスも利用できます（例: 5j, 3w, 50%, 10G, 3|）。",
             "ワークスペース操作", MessageBoxButtons.OK, MessageBoxIcon.Information)));
     }
@@ -160,6 +182,9 @@ internal static class MainFormWorkspaceBridge
         var navigation = NavigationField?.GetValue(form) as ViNavigationProcessor;
         if (editor is null || vi is null || navigation is null) return;
 
+        // KeyPreview is needed only for the motions that MainForm does not natively
+        // route yet. Never infer punctuation from OEM key codes here: on JIS layouts
+        // the same key code can produce ':' and was previously stolen as ';'.
         form.KeyPreview = true;
 
         form.KeyDown += (_, e) =>
@@ -177,15 +202,57 @@ internal static class MainFormWorkspaceBridge
                 }
                 else
                 {
-                    // Consume KeyDown before MainForm/Scintilla can interpret the target as a command
-                    // (for example the x in fx), but allow KeyPress to deliver the actual character.
+                    // Stop the target key from becoming an edit command (fx, tx, ...),
+                    // while still allowing KeyPress to deliver the actual character.
                     e.Handled = true;
                     e.SuppressKeyPress = false;
                 }
                 return;
             }
 
-            var token = ToMotionToken(e);
+            string? token = null;
+            if (e.Control && !e.Alt)
+            {
+                token = e.KeyCode switch
+                {
+                    Keys.E => "Ctrl+e",
+                    Keys.Y => "Ctrl+y",
+                    _ => null
+                };
+            }
+            else if (!e.Control && !e.Alt)
+            {
+                if (!e.Shift && e.KeyCode is >= Keys.D1 and <= Keys.D9)
+                {
+                    token = ((int)e.KeyCode - (int)Keys.D0).ToString();
+                }
+                else if (!e.Shift && e.KeyCode is >= Keys.NumPad1 and <= Keys.NumPad9)
+                {
+                    token = ((int)e.KeyCode - (int)Keys.NumPad0).ToString();
+                }
+                else if (!e.Shift && e.KeyCode is Keys.D0 or Keys.NumPad0 && navigation.HasPendingMotion)
+                {
+                    token = "0";
+                }
+                else
+                {
+                    token = e.KeyCode switch
+                    {
+                        Keys.F when e.Shift => "F",
+                        Keys.T when e.Shift => "T",
+                        Keys.H when e.Shift => "H",
+                        Keys.M when e.Shift => "M",
+                        Keys.L when e.Shift => "L",
+                        Keys.F when !e.Shift => "f",
+                        Keys.T when !e.Shift => "t",
+                        Keys.Enter => "Enter",
+                        Keys.Space => "l",
+                        Keys.Back => "h",
+                        _ => null
+                    };
+                }
+            }
+
             if (token is null || !navigation.Handle(token)) return;
 
             e.Handled = true;
@@ -196,89 +263,24 @@ internal static class MainFormWorkspaceBridge
         form.KeyPress += (_, e) =>
         {
             if (form.IsDisposed || editor.IsDisposed || !editor.ContainsFocus || vi.Mode != EditorMode.Normal) return;
-            if (vi.HasPendingCommand || !navigation.IsAwaitingCharacter) return;
+            if (vi.HasPendingCommand) return;
 
-            navigation.HandleCharacter(e.KeyChar);
+            if (navigation.IsAwaitingCharacter)
+            {
+                navigation.HandleCharacter(e.KeyChar);
+                e.Handled = true;
+                editor.ScrollCaret();
+                return;
+            }
+
+            // ':' '/' '?' are deliberately NOT motion characters. They must continue
+            // to the MainForm COMMAND/search handlers on every keyboard layout.
+            if (ViSupplementalMotionRouting.IsCommandOrSearchPrefix(e.KeyChar)) return;
+            if (!ViSupplementalMotionRouting.TryGetPunctuationMotion(e.KeyChar, out var token)) return;
+            if (!navigation.Handle(token)) return;
+
             e.Handled = true;
             editor.ScrollCaret();
-        };
-    }
-
-    private static string? ToMotionToken(KeyEventArgs e)
-    {
-        if (e.KeyCode == Keys.Escape) return "Esc";
-        if (e.Control)
-        {
-            return e.KeyCode switch
-            {
-                Keys.F => "Ctrl+f",
-                Keys.B => "Ctrl+b",
-                Keys.D => "Ctrl+d",
-                Keys.U => "Ctrl+u",
-                Keys.E => "Ctrl+e",
-                Keys.Y => "Ctrl+y",
-                _ => null
-            };
-        }
-        if (e.Alt) return null;
-
-        if (e.Shift)
-        {
-            return e.KeyCode switch
-            {
-                Keys.D5 => "%",
-                Keys.D9 => "(",
-                Keys.D0 => ")",
-                Keys.D6 => "^",
-                Keys.D4 => "$",
-                Keys.OemOpenBrackets => "{",
-                Keys.OemCloseBrackets => "}",
-                Keys.OemPipe => "|",
-                Keys.OemMinus => "_",
-                Keys.Oemplus => "+",
-                Keys.H => "H",
-                Keys.M => "M",
-                Keys.L => "L",
-                Keys.F => "F",
-                Keys.T => "T",
-                Keys.W => "W",
-                Keys.B => "B",
-                Keys.E => "E",
-                Keys.G => "G",
-                _ => null
-            };
-        }
-
-        if (e.KeyCode is >= Keys.D0 and <= Keys.D9)
-        {
-            return ((int)e.KeyCode - (int)Keys.D0).ToString();
-        }
-        if (e.KeyCode is >= Keys.NumPad0 and <= Keys.NumPad9)
-        {
-            return ((int)e.KeyCode - (int)Keys.NumPad0).ToString();
-        }
-
-        return e.KeyCode switch
-        {
-            Keys.H => "h",
-            Keys.J => "j",
-            Keys.K => "k",
-            Keys.L => "l",
-            Keys.W => "w",
-            Keys.B => "b",
-            Keys.E => "e",
-            Keys.G => "g",
-            Keys.F => "f",
-            Keys.T => "t",
-            Keys.OemSemicolon => ";",
-            Keys.Oemcomma => ",",
-            Keys.OemMinus => "-",
-            Keys.Subtract => "-",
-            Keys.Add => "+",
-            Keys.Enter => "Enter",
-            Keys.Space => "l",
-            Keys.Back => "h",
-            _ => null
         };
     }
 
@@ -382,7 +384,11 @@ internal static class MainFormWorkspaceBridge
             }
             RefreshCoordinateAndPath();
         };
-        form.FormClosed += (_, _) => { timer.Stop(); timer.Dispose(); };
+        form.FormClosed += (_, _) =>
+        {
+            timer.Stop();
+            timer.Dispose();
+        };
         timer.Start();
         PositionCoordinateOverlay();
         RefreshCoordinateAndPath();
