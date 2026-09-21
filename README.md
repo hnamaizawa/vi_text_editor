@@ -2,7 +2,7 @@
 
 Windows向けの軽量テキストエディターです。EmEditor／サクラエディタに近いGUIとファイル操作を持ち、基本操作はvi/Vim系キーバインドで行います。
 
-現在のアプリ版は **v0.1.19** です。
+現在のアプリ版は **v0.1.20** です。
 
 ## 主な特徴
 
@@ -29,6 +29,17 @@ Windows向けの軽量テキストエディターです。EmEditor／サクラ�
 9. AIがその版のWindows x64自己完結ZIPをダウンロード可能にする
 
 ## 変更履歴
+
+### v0.1.20
+
+- Markdown Viewerで `:` COMMAND入力を正式対応
+- `:set ic` / `:set noic` / `:set ic?` をMarkdown Viewerから実行可能
+- Markdown Viewerの `:` `/` `?` 開始判定をOEMキーコードではなく実際に入力された文字で処理し、JIS／USキーボード配列差へ対応
+- COMMAND入力中は画面下部の入力欄と `COMMAND` ステータスを表示
+- `Ctrl+PageDown` / `Ctrl+PageUp` を次／前タブへの切替として追加
+- `Ctrl+PageDown/PageUp` と既存の `Ctrl+Tab/Ctrl+Shift+Tab` を埋め込みViewerより優先して処理
+- キーボードでタブを切り替えた後、選択されたEditor / Markdown Viewer / Large File Viewer本文へ明示的にフォーカス
+- Markdown Viewerのスクロール後でもタブ切替キーを安定して利用できるよう改善
 
 ### v0.1.19
 
@@ -265,8 +276,9 @@ NORMALモードで `:` を押すと画面下部のCOMMAND入力欄へ移りま�
 
 - `Ctrl+T`: 新しいタブ
 - `Ctrl+W`: 現在のタブを閉じる
-- `Ctrl+Tab`: 次のタブ
-- `Ctrl+Shift+Tab`: 前のタブ
+- `Ctrl+Tab` / `Ctrl+PageDown`: 次のタブ
+- `Ctrl+Shift+Tab` / `Ctrl+PageUp`: 前のタブ
+- キーボードでタブ切替後は選択されたタブ本文へフォーカス
 - 最近使ったファイルは最大15件保存
 
 ## Large Fileモード
@@ -303,7 +315,11 @@ Viewerでも基本操作をviに統一しています。
 - `Ctrl+D/U`
 - `gg/G`
 - `/ ? n N`
-- `:set ic` / `:set noic`
+- `:` でCOMMAND入力
+- `:set ic` / `:set noic` / `:set ic?`
+- `Ctrl+PageDown/PageUp` または `Ctrl+Tab/Ctrl+Shift+Tab` で他タブへ移動
+
+`:` `/` `?` はキーボード配列依存のOEMキーコードではなく、実際に入力された文字で判定します。
 
 ## シンタックス強調
 
