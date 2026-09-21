@@ -45,7 +45,6 @@ internal sealed class ScintillaEditorAdapter : IEditorAdapter
         var line = _editor.LineFromPosition(Math.Clamp(position, 0, _editor.TextLength));
         var item = _editor.Lines[Math.Clamp(line, 0, _editor.Lines.Count - 1)];
         var end = item.EndPosition;
-        // Line.EndPosition includes CR/LF because Line.Length includes EOL characters.
         if (end > item.Position && CharAt(end - 1) == '\n') end--;
         if (end > item.Position && CharAt(end - 1) == '\r') end--;
         return end;
@@ -87,6 +86,37 @@ internal sealed class ScintillaEditorAdapter : IEditorAdapter
     {
         if (direction == 0) return;
         ScrollByVisibleLines(Math.Sign(direction) * Math.Max(1, _editor.LinesOnScreen / 2));
+    }
+
+    public void ScrollView(int direction)
+    {
+        if (direction == 0 || _editor.Lines.Count == 0) return;
+        _editor.FirstVisibleLine = Math.Clamp(
+            _editor.FirstVisibleLine + Math.Sign(direction),
+            0,
+            Math.Max(0, _editor.Lines.Count - 1));
+    }
+
+    public void MoveToViewport(ViViewportTarget target, int count = 1)
+    {
+        if (_editor.Lines.Count == 0) return;
+        count = Math.Max(1, count);
+        var first = Math.Clamp(_editor.FirstVisibleLine, 0, _editor.Lines.Count - 1);
+        var visible = Math.Max(1, _editor.LinesOnScreen);
+        var targetLine = target switch
+        {
+            ViViewportTarget.Top => first + count - 1,
+            ViViewportTarget.Middle => first + visible / 2,
+            ViViewportTarget.Bottom => first + visible - count,
+            _ => first
+        };
+        targetLine = Math.Clamp(targetLine, 0, _editor.Lines.Count - 1);
+        var line = _editor.Lines[targetLine];
+        var end = LineEndExclusive(line.Position);
+        var position = line.Position;
+        while (position < end && char.IsWhiteSpace(CharAt(position))) position++;
+        _editor.GotoPosition(position < end ? position : line.Position);
+        _editor.ScrollCaret();
     }
 
     private void ScrollByVisibleLines(int deltaLines)
