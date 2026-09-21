@@ -27,7 +27,6 @@ public sealed class ViNavigationProcessor
 
         if (_pendingFind is not null)
         {
-            // f/F/t/T waits for an actual character from KeyPress.
             return true;
         }
 
@@ -113,7 +112,7 @@ public sealed class ViNavigationProcessor
                 Repeat(motionCount, () => MoveEndWord(bigWord: true));
                 return true;
             case "^":
-                MoveFirstNonWhitespace(motionCount - 1);
+                MoveFirstNonWhitespace(0);
                 return true;
             case "$":
                 MoveLineEnd(motionCount - 1);
@@ -194,15 +193,15 @@ public sealed class ViNavigationProcessor
         if (_pendingFind is not { } pending) return false;
         _pendingFind = null;
         var motion = new FindMotion(target, pending.Direction, pending.Till);
-        var moved = ExecuteFind(motion, pending.Count, isRepeat: false);
+        ExecuteFind(motion, pending.Count, isRepeat: false);
         _lastFind = motion;
-        return moved || true;
+        return true;
     }
 
     private void AppendCount(int digit)
     {
         _hasCount = true;
-        _count = Math.Min(999_999, checked(_count * 10 + digit));
+        _count = Math.Min(999_999, _count * 10 + digit);
     }
 
     private int TakeCount(out bool explicitCount)
@@ -267,16 +266,15 @@ public sealed class ViNavigationProcessor
         if (length == 0) return 0;
         var end = _editor.LineEndExclusive(lineStart);
         var next = end;
-        while (next < length && _editor.CharAt(next) is '\r' or '\n') next++;
+        if (next < length && _editor.CharAt(next) == '\r') next++;
+        if (next < length && _editor.CharAt(next) == '\n') next++;
         return next < length ? next : lineStart;
     }
 
     private int PreviousLineStart(int lineStart)
     {
         if (lineStart <= 0) return 0;
-        var probe = lineStart - 1;
-        while (probe > 0 && _editor.CharAt(probe) is '\r' or '\n') probe--;
-        return _editor.LineStart(probe);
+        return _editor.LineStart(lineStart - 1);
     }
 
     private void MoveColumnZero()
@@ -449,30 +447,34 @@ public sealed class ViNavigationProcessor
     {
         var text = _editor.Text;
         if (text.Length == 0) return;
-        var i = Math.Clamp(_editor.CaretPosition - 1, 0, text.Length - 1);
-        while (i > 0 && char.IsWhiteSpace(text[i])) i--;
-        if (i <= 0)
+        var current = Math.Clamp(_editor.CaretPosition, 0, text.Length - 1);
+        var i = current - 1;
+        if (i < 0)
         {
             _editor.MoveCaret(0);
             return;
         }
 
-        var cls = bigWord ? SmallWordClass.Keyword : ClassifySmallWord(text[i]);
-        while (i > 0)
+        if (!char.IsWhiteSpace(text[current]) && !char.IsWhiteSpace(text[i]))
         {
-            var previous = text[i - 1];
-            var same = bigWord ? !char.IsWhiteSpace(previous) : ClassifySmallWord(previous) == cls;
-            if (!same) break;
-            i--;
+            var currentClass = ClassifySmallWord(text[current]);
+            while (i >= 0)
+            {
+                var sameCurrent = bigWord
+                    ? !char.IsWhiteSpace(text[i])
+                    : ClassifySmallWord(text[i]) == currentClass;
+                if (!sameCurrent) break;
+                i--;
+            }
         }
-        while (i > 0 && char.IsWhiteSpace(text[i - 1])) i--;
-        if (i == 0)
+
+        while (i >= 0 && char.IsWhiteSpace(text[i])) i--;
+        if (i < 0)
         {
             _editor.MoveCaret(0);
             return;
         }
-        i--;
-        while (i > 0 && char.IsWhiteSpace(text[i])) i--;
+
         _editor.MoveCaret(i);
     }
 
