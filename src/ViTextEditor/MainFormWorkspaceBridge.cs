@@ -6,6 +6,8 @@ namespace ViTextEditor;
 
 internal static class MainFormWorkspaceBridge
 {
+    private const int CoordinateOverlayWidth = 190;
+
     private static readonly FieldInfo? FilePathField = typeof(MainForm).GetField("_filePath", BindingFlags.Instance | BindingFlags.NonPublic);
     private static readonly FieldInfo? NewLineField = typeof(MainForm).GetField("_newLine", BindingFlags.Instance | BindingFlags.NonPublic);
     private static readonly FieldInfo? ForceCloseField = typeof(MainForm).GetField("_forceClose", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -142,9 +144,9 @@ internal static class MainFormWorkspaceBridge
         var help = menu.Items.OfType<ToolStripMenuItem>().FirstOrDefault(item => item.Text.Contains("ヘルプ", StringComparison.Ordinal));
         if (help is null) return;
         ReplaceMenuItem(help, item => item.Text.Contains("バージョン情報", StringComparison.Ordinal),
-            new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show("vi_text_editor v0.1.15\nPinned X/Y coordinates / extension syntax highlighting", "バージョン情報", MessageBoxButtons.OK, MessageBoxIcon.Information)));
-        help.DropDownItems.Add(new ToolStripMenuItem("v0.1.15 ワークスペース操作", null, (_, _) => MessageBox.Show(
-            "Ctrl+T: 新しいタブ\nCtrl+W: タブを閉じる\nCtrl+Tab: 次のタブ\nCtrl+Shift+Tab: 前のタブ\n\n右下: X=桁 / Y=行（1始まり）\n拡張子に応じて Markdown / JSON / XML / C# / Python / JavaScript / TypeScript / YAML を強調表示します。\n64MiB以上のテキストはLarge Fileモードでストリーミング表示します。\nJSON整形: Ctrl+Shift+J\nMarkdownプレビュー: Ctrl+Shift+M",
+            new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show("vi_text_editor v0.1.16\nNon-overflow X/Y coordinate overlay", "バージョン情報", MessageBoxButtons.OK, MessageBoxIcon.Information)));
+        help.DropDownItems.Add(new ToolStripMenuItem("v0.1.16 ワークスペース操作", null, (_, _) => MessageBox.Show(
+            "Ctrl+T: 新しいタブ\nCtrl+W: タブを閉じる\nCtrl+Tab: 次のタブ\nCtrl+Shift+Tab: 前のタブ\n\n右下: X=桁 / Y=行（1始まり）\n座標はStatusStripのoverflowに入らない専用表示です。\n拡張子に応じて Markdown / JSON / XML / C# / Python / JavaScript / TypeScript / YAML を強調表示します。\n64MiB以上のテキストはLarge Fileモードでストリーミング表示します。\nJSON整形: Ctrl+Shift+J\nMarkdownプレビュー: Ctrl+Shift+M",
             "ワークスペース操作", MessageBoxButtons.OK, MessageBoxIcon.Information)));
     }
 
@@ -153,38 +155,72 @@ internal static class MainFormWorkspaceBridge
         var editor = GetEditor(form);
         var status = FindControls<StatusStrip>(form).FirstOrDefault();
         var labels = status?.Items.OfType<ToolStripStatusLabel>().ToList();
-        var position = labels?.LastOrDefault();
-        if (editor is null || status is null || labels is null || labels.Count < 5 || position is null) return;
+        var legacyPosition = labels?.LastOrDefault();
+        if (editor is null || status is null || labels is null || labels.Count < 5 || legacyPosition is null) return;
 
-        // v0.1.14 left the encoding label as Spring=true. On a narrow embedded tab this could
-        // consume the remaining width and put the final position label into overflow. Reserve
-        // the expandable space explicitly before the encoding/EOL/coordinate group instead.
-        foreach (var label in labels) label.Spring = false;
-        var spacer = new ToolStripStatusLabel
+        // ToolStrip/StatusStrip can move the last item into overflow when MainForm is embedded in a tab.
+        // Do not use a ToolStrip item for coordinates at all. Reserve physical space at the right side
+        // of the StatusStrip and place a normal WinForms Label over that reserved area. A normal Control
+        // never participates in ToolStrip overflow, so X/Y remains visible regardless of ToolStrip layout.
+        foreach (var item in status.Items.OfType<ToolStripItem>().Where(item => item.Name == "CoordinateSpacer").ToArray())
         {
-            Name = "CoordinateSpacer",
-            Spring = true,
-            Text = string.Empty
-        };
-        var rightGroupIndex = Math.Max(0, status.Items.IndexOf(labels[2]));
-        status.Items.Insert(rightGroupIndex, spacer);
+            status.Items.Remove(item);
+            item.Dispose();
+        }
+        foreach (var label in labels) label.Spring = false;
 
-        position.AutoSize = false;
-        position.Width = 180;
-        position.Alignment = ToolStripItemAlignment.Right;
-        position.TextAlign = ContentAlignment.MiddleRight;
-        position.ToolTipText = "X: 1始まりの桁位置 / Y: 1始まりの行番号";
+        legacyPosition.Visible = false;
+        legacyPosition.Available = false;
+        status.SizingGrip = false;
+        status.CanOverflow = false;
+        var padding = status.Padding;
+        status.Padding = new Padding(padding.Left, padding.Top, CoordinateOverlayWidth + 10, padding.Bottom);
+
+        var coordinate = new Label
+        {
+            Name = "WorkspaceCoordinateOverlay",
+            AutoSize = false,
+            Text = "X=1  Y=1",
+            TextAlign = ContentAlignment.MiddleRight,
+            BackColor = SystemColors.Control,
+            ForeColor = SystemColors.ControlText,
+            Font = status.Font,
+            TabStop = false
+        };
+        coordinate.AccessibleName = "カーソル座標";
+        coordinate.AccessibleDescription = "Xは1始まりの桁位置、Yは1始まりの行番号";
+        form.Controls.Add(coordinate);
+
+        void PositionCoordinateOverlay()
+        {
+            if (form.IsDisposed || form.Disposing || coordinate.IsDisposed || status.IsDisposed) return;
+            var height = Math.Max(18, status.Height - 2);
+            var left = Math.Max(0, form.ClientSize.Width - CoordinateOverlayWidth - 6);
+            coordinate.SetBounds(left, status.Top + 1, CoordinateOverlayWidth, height);
+            coordinate.BringToFront();
+        }
 
         string? lastPath = null;
         void RefreshCoordinateAndPath()
         {
-            if (form.IsDisposed || form.Disposing || editor.IsDisposed || editor.Disposing) return;
+            if (form.IsDisposed || form.Disposing || editor.IsDisposed || editor.Disposing || coordinate.IsDisposed) return;
             try
             {
-                var caret = Math.Clamp(editor.CurrentPosition, 0, editor.TextLength);
-                var y = editor.LineFromPosition(caret) + 1;
-                var x = editor.GetColumn(caret) + 1;
-                position.Text = $"X={x}  Y={y}";
+                if (editor.Visible)
+                {
+                    var caret = Math.Clamp(editor.CurrentPosition, 0, editor.TextLength);
+                    var y = editor.LineFromPosition(caret) + 1;
+                    var x = editor.GetColumn(caret) + 1;
+                    coordinate.Text = $"X={x}  Y={y}";
+                    coordinate.Visible = true;
+                }
+                else
+                {
+                    coordinate.Text = legacyPosition.Text;
+                    coordinate.Visible = !string.IsNullOrWhiteSpace(coordinate.Text);
+                }
+
+                PositionCoordinateOverlay();
 
                 var path = GetFilePath(form);
                 if (!string.Equals(lastPath, path, StringComparison.OrdinalIgnoreCase))
@@ -205,11 +241,14 @@ internal static class MainFormWorkspaceBridge
         editor.MouseUp += (_, _) => RefreshCoordinateAndPath();
         editor.KeyUp += (_, _) => RefreshCoordinateAndPath();
         form.Shown += (_, _) => RefreshCoordinateAndPath();
+        form.Resize += (_, _) => PositionCoordinateOverlay();
+        status.LocationChanged += (_, _) => PositionCoordinateOverlay();
+        status.SizeChanged += (_, _) => PositionCoordinateOverlay();
 
         var timer = new System.Windows.Forms.Timer { Interval = 200 };
         timer.Tick += (_, _) =>
         {
-            if (form.IsDisposed || form.Disposing || editor.IsDisposed || editor.Disposing)
+            if (form.IsDisposed || form.Disposing || editor.IsDisposed || editor.Disposing || coordinate.IsDisposed)
             {
                 timer.Stop();
                 timer.Dispose();
@@ -219,6 +258,7 @@ internal static class MainFormWorkspaceBridge
         };
         form.FormClosed += (_, _) => { timer.Stop(); timer.Dispose(); };
         timer.Start();
+        PositionCoordinateOverlay();
         RefreshCoordinateAndPath();
     }
 
