@@ -2,12 +2,13 @@
 
 Windows向けの軽量テキストエディターです。EmEditor／サクラエディタに近いGUIとファイル操作を持ち、基本操作はvi/Vim系キーバインドで行います。
 
-現在のアプリ版は **v0.1.21** です。
+現在のアプリ版は **v0.1.22** です。
 
 ## 主な特徴
 
 - .NET 10 + WinForms + Scintilla5.NET
-- Windows x64自己完結版を配布し、通常利用時は.NETの別途インストール不要
+- Windows x64自己完結版に加え、別PCへEXE 1個だけコピーできるsingle-file版を配布
+- 通常利用時は.NETの別途インストール不要
 - NORMAL / INSERT / COMMANDを中心としたvi操作
 - 日本語IME、UTF-8 / UTF-8 BOM / Shift_JIS / UTF-16、CRLF / LF対応
 - 複数タブ、最近使ったファイル、Large Fileモード
@@ -26,9 +27,19 @@ Windows向けの軽量テキストエディターです。EmEditor／サクラ�
 6. 人がPull Requestを確認する
 7. 問題なければ人がAIへマージを依頼する
 8. AIがPull Requestをマージする
-9. AIがその版のWindows x64自己完結ZIPをダウンロード可能にする
+9. AIがその版のWindows x64自己完結ZIPとsingle-file EXEをダウンロード可能にする
 
 ## 変更履歴
+
+### v0.1.22
+
+- Windows x64のsingle-file self-contained配布を追加
+- `vi_text_editor.exe` 1ファイルだけを別PCへコピーして実行可能
+- Scintilla等のネイティブライブラリをEXEへ同梱し、必要時にWindowsの一時領域へ自己展開
+- CIでsingle-file出力が `vi_text_editor.exe` 1ファイルだけであることを検証
+- GitHub Actionsへ `vi_text_editor-win-x64-single-file` Artifactを追加
+- ローカル生成用 `publish_windows_single_file.cmd` を追加
+- 従来のフォルダー型 `vi_text_editor-win-x64` 配布も継続
 
 ### v0.1.21
 
@@ -365,10 +376,23 @@ Markdownの見出しは太字・サイズ差で強調します。ハイライト
 
 ## Windowsで通常利用する方法（.NETのインストール不要）
 
-GitHub Actionsの成功したCIから `vi_text_editor-win-x64` を取得できます。AIへ「マージしてください」と依頼した場合は、マージ完了後にその版のZIPダウンロードリンクも提示します。
+GitHub Actionsでは2種類のWindows x64自己完結版を生成します。
 
-1. ZIPを任意のフォルダーへ展開
-2. `vi_text_editor.exe` をダブルクリック
+**1ファイル版（別PCへの持ち運びに推奨）**
+
+- Artifact: `vi_text_editor-win-x64-single-file`
+- 中身は `vi_text_editor.exe` 1ファイルだけ
+- `vi_text_editor.exe` を任意のフォルダーへコピーしてダブルクリック
+- 別途.NET Runtime / SDKをインストールする必要はありません
+- Scintilla等のネイティブライブラリはEXE内に同梱され、実行時にWindowsの一時領域へ自己展開されます
+
+**従来のフォルダー版**
+
+- Artifact: `vi_text_editor-win-x64`
+- ZIPを任意のフォルダーへ展開し、`vi_text_editor.exe` をダブルクリック
+- こちらも.NET Runtime / SDKは不要です
+
+AIへ「マージしてください」と依頼した場合は、マージ完了後にその版の自己完結ZIPに加えてsingle-file EXEも提示します。
 
 ## ソースコードから開発・起動する方法
 
@@ -384,6 +408,18 @@ run_windows.cmd
 cd C:\temp\vi_text_editor
 git pull
 run_windows.cmd
+```
+
+フォルダー型の自己完結版をローカル生成:
+
+```bat
+publish_windows_portable.cmd
+```
+
+1ファイル版をローカル生成:
+
+```bat
+publish_windows_single_file.cmd
 ```
 
 ## 回帰テスト

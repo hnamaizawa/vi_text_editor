@@ -1,11 +1,11 @@
 project:
   name: vi_text_editor
-  version: 0.1.21
+  version: 0.1.22
   platform: windows
   ui: winforms
   editor_component: Scintilla5.NET
   development_runtime: .NET 10
-  distribution: self-contained Windows x64
+  distribution: self-contained Windows x64 + single-file Windows x64
 
 development_model:
   - human_describes_requirements_in_natural_language
@@ -15,7 +15,7 @@ development_model:
   - ai_opens_pull_request
   - human_reviews_pull_request
   - ai_merges_only_after_human_requests_merge
-  - ai_provides_downloadable_portable_zip_after_successful_merge
+  - ai_provides_downloadable_portable_zip_and_single_file_exe_after_successful_merge
 
 non_negotiable_invariants:
   - versioned_pull_requests_must_update_readme_change_history_before_merge
@@ -140,9 +140,13 @@ non_negotiable_invariants:
   - unrelated_features_must_not_be_changed
   - core_vi_behavior_must_remain_gui_independent_and_unit_testable
   - portable_windows_distribution_must_not_require_dotnet_installation
-  - pull_requests_must_pass_core_tests_windows_build_and_portable_publish
+  - single_file_windows_distribution_must_not_require_dotnet_installation
+  - single_file_windows_distribution_must_bundle_native_libraries_for_self_extraction
+  - single_file_windows_distribution_must_contain_exactly_one_vi_text_editor_executable
+  - pull_requests_must_pass_core_tests_windows_build_portable_publish_and_single_file_publish
 
 required_checks:
   - dotnet test tests/ViTextEditor.Core.Tests/ViTextEditor.Core.Tests.csproj --configuration Release
   - dotnet build src/ViTextEditor/ViTextEditor.csproj --configuration Release
   - dotnet publish src/ViTextEditor/ViTextEditor.csproj --configuration Release --runtime win-x64 --self-contained true
+  - dotnet publish src/ViTextEditor/ViTextEditor.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=None -p:DebugSymbols=false
