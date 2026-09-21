@@ -1,6 +1,6 @@
 project:
   name: vi_text_editor
-  version: 0.1.16
+  version: 0.1.17
   platform: windows
   ui: winforms
   editor_component: Scintilla5.NET
@@ -24,6 +24,15 @@ non_negotiable_invariants:
   - vi_commands_must_not_corrupt_document_text
   - caret_motion_must_move_to_first_nonblank_character
   - vi_word_and_WORD_motions_must_remain_distinct
+  - percent_motion_must_match_parentheses_brackets_and_braces
+  - counted_percent_motion_must_jump_to_file_percentage
+  - vi_find_motions_must_support_f_F_t_T_semicolon_and_comma
+  - vi_sentence_and_paragraph_motions_must_support_parentheses_and_braces
+  - vi_window_motions_must_support_H_M_and_L
+  - vi_line_motions_must_support_plus_minus_underscore_and_bar
+  - ctrl_e_and_ctrl_y_must_scroll_view_without_editing_text
+  - numeric_prefixes_must_apply_to_normal_mode_cursor_motions
+  - pending_find_target_must_be_consumed_as_a_motion_character_not_an_edit_command
   - change_word_commands_must_delete_target_and_enter_insert_mode
   - delete_word_commands_must_support_dw_dW_de_dE_and_line_end_delete
   - dot_must_repeat_the_last_change_not_plain_navigation_or_yank
@@ -74,6 +83,9 @@ non_negotiable_invariants:
   - syntax_highlighting_must_follow_the_current_file_extension
   - markdown_headings_must_be_visually_emphasized
   - syntax_highlighting_must_not_modify_document_text
+  - json_formatting_must_accept_valid_single_line_json
+  - json_formatting_may_normalize_bom_unicode_whitespace_and_separated_numeric_signs
+  - json_formatting_normalization_must_not_change_quoted_string_contents
   - json_formatting_must_be_undoable_and_refuse_reference_mode
   - json_formatting_must_preserve_the_active_document_newline_style
   - markdown_preview_must_render_in_a_separate_tab_without_modifying_source_text

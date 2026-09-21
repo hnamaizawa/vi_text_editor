@@ -11,6 +11,8 @@ internal static class MainFormWorkspaceBridge
     private static readonly FieldInfo? FilePathField = typeof(MainForm).GetField("_filePath", BindingFlags.Instance | BindingFlags.NonPublic);
     private static readonly FieldInfo? NewLineField = typeof(MainForm).GetField("_newLine", BindingFlags.Instance | BindingFlags.NonPublic);
     private static readonly FieldInfo? ForceCloseField = typeof(MainForm).GetField("_forceClose", BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly FieldInfo? ViField = typeof(MainForm).GetField("_vi", BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly FieldInfo? NavigationField = typeof(MainForm).GetField("_navigation", BindingFlags.Instance | BindingFlags.NonPublic);
     private static readonly MethodInfo? OpenFilePathMethod = typeof(MainForm).GetMethod("OpenFilePath", BindingFlags.Instance | BindingFlags.NonPublic);
 
     public static bool OpenPath(MainForm form, string path)
@@ -45,6 +47,7 @@ internal static class MainFormWorkspaceBridge
         InstallTabMenu(workspace, menu);
         InstallToolsMenu(form, workspace, menu);
         InstallHelpVersion(menu);
+        InstallViMotionPreview(form);
         InstallCoordinateUpdater(form, workspace);
     }
 
@@ -144,10 +147,139 @@ internal static class MainFormWorkspaceBridge
         var help = menu.Items.OfType<ToolStripMenuItem>().FirstOrDefault(item => item.Text.Contains("ヘルプ", StringComparison.Ordinal));
         if (help is null) return;
         ReplaceMenuItem(help, item => item.Text.Contains("バージョン情報", StringComparison.Ordinal),
-            new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show("vi_text_editor v0.1.16\nNon-overflow X/Y coordinate overlay", "バージョン情報", MessageBoxButtons.OK, MessageBoxIcon.Information)));
-        help.DropDownItems.Add(new ToolStripMenuItem("v0.1.16 ワークスペース操作", null, (_, _) => MessageBox.Show(
-            "Ctrl+T: 新しいタブ\nCtrl+W: タブを閉じる\nCtrl+Tab: 次のタブ\nCtrl+Shift+Tab: 前のタブ\n\n右下: X=桁 / Y=行（1始まり）\n座標はStatusStripのoverflowに入らない専用表示です。\n拡張子に応じて Markdown / JSON / XML / C# / Python / JavaScript / TypeScript / YAML を強調表示します。\n64MiB以上のテキストはLarge Fileモードでストリーミング表示します。\nJSON整形: Ctrl+Shift+J\nMarkdownプレビュー: Ctrl+Shift+M",
+            new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show("vi_text_editor v0.1.17\nJSON formatting / Vim cursor motions", "バージョン情報", MessageBoxButtons.OK, MessageBoxIcon.Information)));
+        help.DropDownItems.Add(new ToolStripMenuItem("v0.1.17 ワークスペース操作", null, (_, _) => MessageBox.Show(
+            "Ctrl+T: 新しいタブ\nCtrl+W: タブを閉じる\nCtrl+Tab: 次のタブ\nCtrl+Shift+Tab: 前のタブ\n\n右下: X=桁 / Y=行（1始まり）\nJSON整形: Ctrl+Shift+J\nMarkdownプレビュー: Ctrl+Shift+M\n\nvi移動: % / f F t T / ; , / ( ) / { } / H M L / + - _ | / Ctrl+E Ctrl+Y\n移動には数値プレフィックスも利用できます（例: 5j, 3w, 50%, 10G, 3|）。",
             "ワークスペース操作", MessageBoxButtons.OK, MessageBoxIcon.Information)));
+    }
+
+    private static void InstallViMotionPreview(MainForm form)
+    {
+        var editor = GetEditor(form);
+        var vi = ViField?.GetValue(form) as ViKeyProcessor;
+        var navigation = NavigationField?.GetValue(form) as ViNavigationProcessor;
+        if (editor is null || vi is null || navigation is null) return;
+
+        form.KeyPreview = true;
+
+        form.KeyDown += (_, e) =>
+        {
+            if (form.IsDisposed || editor.IsDisposed || !editor.ContainsFocus || vi.Mode != EditorMode.Normal) return;
+            if (vi.HasPendingCommand) return;
+
+            if (navigation.IsAwaitingCharacter)
+            {
+                if (e.KeyCode == Keys.Escape)
+                {
+                    navigation.Handle("Esc");
+                    e.Handled = true;
+                    e.SuppressKeyPress = true;
+                }
+                else
+                {
+                    // Consume KeyDown before MainForm/Scintilla can interpret the target as a command
+                    // (for example the x in fx), but allow KeyPress to deliver the actual character.
+                    e.Handled = true;
+                    e.SuppressKeyPress = false;
+                }
+                return;
+            }
+
+            var token = ToMotionToken(e);
+            if (token is null || !navigation.Handle(token)) return;
+
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+            editor.ScrollCaret();
+        };
+
+        form.KeyPress += (_, e) =>
+        {
+            if (form.IsDisposed || editor.IsDisposed || !editor.ContainsFocus || vi.Mode != EditorMode.Normal) return;
+            if (vi.HasPendingCommand || !navigation.IsAwaitingCharacter) return;
+
+            navigation.HandleCharacter(e.KeyChar);
+            e.Handled = true;
+            editor.ScrollCaret();
+        };
+    }
+
+    private static string? ToMotionToken(KeyEventArgs e)
+    {
+        if (e.KeyCode == Keys.Escape) return "Esc";
+        if (e.Control)
+        {
+            return e.KeyCode switch
+            {
+                Keys.F => "Ctrl+f",
+                Keys.B => "Ctrl+b",
+                Keys.D => "Ctrl+d",
+                Keys.U => "Ctrl+u",
+                Keys.E => "Ctrl+e",
+                Keys.Y => "Ctrl+y",
+                _ => null
+            };
+        }
+        if (e.Alt) return null;
+
+        if (e.Shift)
+        {
+            return e.KeyCode switch
+            {
+                Keys.D5 => "%",
+                Keys.D9 => "(",
+                Keys.D0 => ")",
+                Keys.D6 => "^",
+                Keys.D4 => "$",
+                Keys.OemOpenBrackets => "{",
+                Keys.OemCloseBrackets => "}",
+                Keys.OemPipe => "|",
+                Keys.OemMinus => "_",
+                Keys.Oemplus => "+",
+                Keys.H => "H",
+                Keys.M => "M",
+                Keys.L => "L",
+                Keys.F => "F",
+                Keys.T => "T",
+                Keys.W => "W",
+                Keys.B => "B",
+                Keys.E => "E",
+                Keys.G => "G",
+                _ => null
+            };
+        }
+
+        if (e.KeyCode is >= Keys.D0 and <= Keys.D9)
+        {
+            return ((int)e.KeyCode - (int)Keys.D0).ToString();
+        }
+        if (e.KeyCode is >= Keys.NumPad0 and <= Keys.NumPad9)
+        {
+            return ((int)e.KeyCode - (int)Keys.NumPad0).ToString();
+        }
+
+        return e.KeyCode switch
+        {
+            Keys.H => "h",
+            Keys.J => "j",
+            Keys.K => "k",
+            Keys.L => "l",
+            Keys.W => "w",
+            Keys.B => "b",
+            Keys.E => "e",
+            Keys.G => "g",
+            Keys.F => "f",
+            Keys.T => "t",
+            Keys.OemSemicolon => ";",
+            Keys.Oemcomma => ",",
+            Keys.OemMinus => "-",
+            Keys.Subtract => "-",
+            Keys.Add => "+",
+            Keys.Enter => "Enter",
+            Keys.Space => "l",
+            Keys.Back => "h",
+            _ => null
+        };
     }
 
     private static void InstallCoordinateUpdater(MainForm form, EditorWorkspaceForm workspace)
@@ -158,10 +290,6 @@ internal static class MainFormWorkspaceBridge
         var legacyPosition = labels?.LastOrDefault();
         if (editor is null || status is null || labels is null || labels.Count < 5 || legacyPosition is null) return;
 
-        // ToolStrip/StatusStrip can move the last item into overflow when MainForm is embedded in a tab.
-        // Do not use a ToolStrip item for coordinates at all. Reserve physical space at the right side
-        // of the StatusStrip and place a normal WinForms Label over that reserved area. A normal Control
-        // never participates in ToolStrip overflow, so X/Y remains visible regardless of ToolStrip layout.
         foreach (var item in status.Items.OfType<ToolStripItem>().Where(item => item.Name == "CoordinateSpacer").ToArray())
         {
             status.Items.Remove(item);
@@ -232,8 +360,6 @@ internal static class MainFormWorkspaceBridge
             }
             catch (ObjectDisposedException)
             {
-                // A child editor can be in the final WinForms disposal phase while a queued UI event remains.
-                // Do not let a status/syntax refresh turn a normal tab close into a JIT exception.
             }
         }
 

@@ -1,5 +1,12 @@
 namespace ViTextEditor.Core.Editor;
 
+public enum ViViewportTarget
+{
+    Top,
+    Middle,
+    Bottom
+}
+
 public interface IEditorAdapter
 {
     string Text { get; }
@@ -51,6 +58,14 @@ public interface IEditorAdapter
     }
 
     void ScrollHalfPage(int direction)
+    {
+    }
+
+    void ScrollView(int direction)
+    {
+    }
+
+    void MoveToViewport(ViViewportTarget target, int count = 1)
     {
     }
 }
