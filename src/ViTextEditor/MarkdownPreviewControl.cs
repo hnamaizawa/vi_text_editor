@@ -59,8 +59,8 @@ internal sealed class MarkdownPreviewControl : UserControl
         _zoomFilter = SmoothWheelZoomFilter.Attach(_browser, ApplyZoomSteps);
         // Do not infer ':'/'/'/'?' from OEM key codes. On JIS keyboards the same
         // physical key can map differently. WM_CHAR contains the actual character
-        // produced by the active keyboard layout, so COMMAND/search input works the
-        // same way as the main editor's layout-independent punctuation handling.
+        // produced by the active keyboard layout. The same filter also intercepts
+        // workspace tab shortcuts before the embedded WebBrowser ActiveX can eat them.
         _commandPrefixFilter = ActualCommandPrefixFilter.Attach(
             this,
             () => !_command.Visible,
@@ -273,6 +273,7 @@ internal sealed class MarkdownPreviewControl : UserControl
 
     private sealed class ActualCommandPrefixFilter : IMessageFilter, IDisposable
     {
+        private const int WmKeyDown = 0x0100;
         private const int WmChar = 0x0102;
         private readonly Control _owner;
         private readonly Func<bool> _canBegin;
@@ -292,7 +293,13 @@ internal sealed class MarkdownPreviewControl : UserControl
 
         public bool PreFilterMessage(ref Message m)
         {
-            if (_disposed || m.Msg != WmChar || _owner.IsDisposed || !_owner.Visible || !_owner.ContainsFocus || !_canBegin())
+            if (_disposed || _owner.IsDisposed || !_owner.Visible || !_owner.ContainsFocus)
+                return false;
+
+            if (m.Msg == WmKeyDown && TryHandleWorkspaceTabShortcut(m))
+                return true;
+
+            if (m.Msg != WmChar || !_canBegin())
                 return false;
 
             var raw = m.WParam.ToInt64();
@@ -301,6 +308,38 @@ internal sealed class MarkdownPreviewControl : UserControl
             if (ch != ':' && ch != '/' && ch != '?') return false;
 
             _begin(ch);
+            return true;
+        }
+
+        private bool TryHandleWorkspaceTabShortcut(Message message)
+        {
+            var modifiers = Control.ModifierKeys;
+            if ((modifiers & Keys.Control) != Keys.Control || (modifiers & Keys.Alt) == Keys.Alt)
+                return false;
+
+            var key = (Keys)message.WParam.ToInt32();
+            int delta;
+            if (key == Keys.PageDown)
+            {
+                delta = 1;
+            }
+            else if (key == Keys.PageUp)
+            {
+                delta = -1;
+            }
+            else if (key == Keys.Tab)
+            {
+                delta = (modifiers & Keys.Shift) == Keys.Shift ? -1 : 1;
+            }
+            else
+            {
+                return false;
+            }
+
+            if (_owner.FindForm() is not EditorWorkspaceForm workspace)
+                return false;
+
+            workspace.SelectNextTab(delta);
             return true;
         }
 
