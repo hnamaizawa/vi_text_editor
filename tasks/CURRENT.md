@@ -1,29 +1,21 @@
-# CURRENT - v0.1.20
+# CURRENT - v0.1.21
 
 ## 目的
 
-Markdown Viewerを通常エディタ／Large File Viewer／バイナリViewerと同じvi中心の操作体系へさらに揃え、Viewerがフォーカスを持っていてもワークスペースのタブ移動を安定して実行できるようにする。
+エラー／警告表示時にWindows標準の効果音を鳴らさず、メッセージ内容や操作性は従来どおり維持する。
 
-## v0.1.20 スコープ
+## v0.1.21 スコープ
 
-- [x] Markdown Viewerで `:` COMMAND入力を利用可能にする
-- [x] Markdown Viewerで `:set ic` / `:set noic` / `:set ic?` を利用可能にする
-- [x] Markdown Viewerの `:` `/` `?` 開始判定をOEMキーコードではなく実際の入力文字で行う
-- [x] JIS／USキーボード配列差でCOMMAND入力が失われない構造へ変更
-- [x] COMMAND入力中は下部入力欄と `COMMAND` ステータスを表示
-- [x] `Ctrl+PageDown` / `Ctrl+PageUp` をワークスペース最優先のタブ切替として追加
-- [x] `Ctrl+Tab` / `Ctrl+Shift+Tab` の既存タブ切替を維持
-- [x] Markdown Viewerがスクロール後もタブ切替キーを奪わないよう優先順位を明示
-- [x] キーボードでタブ切替後、選択されたEditor / Markdown / Large File本文へフォーカスを移す
-- [x] MarkdownのCOMMAND/検索入力中に別タブへ移る場合は一時入力をキャンセル
-- [x] README.mdへv0.1.20変更履歴を追記
-- [x] ハーネスをv0.1.20へ更新
+- [x] `MessageBoxIcon.Error` / `MessageBoxIcon.Warning` によるWindows標準効果音を抑止
+- [x] エラー／警告メッセージ本文とボタン構成は変更しない
+- [x] Information / Questionなど通常の情報・確認ダイアログの意味は維持
+- [x] 個別箇所ではなくアプリ共通のMessageBoxラッパーで一元管理
+- [x] README.mdへv0.1.21変更履歴を追記
+- [x] ハーネスをv0.1.21へ更新
 
 ## 実装方針
 
-Markdown Viewer内の既存 `ViOptions` / 検索ロジックは維持し、COMMAND開始方法だけをWinFormsの `WM_CHAR` ベースへ変更する。これにより、JISキーボード上で `:` がどのOEMキーに割り当たるかを推測しない。
-
-タブ移動は埋め込みViewerより上位の `EditorWorkspaceForm.ProcessCmdKey` で処理し、`Ctrl+PageUp/PageDown` と `Ctrl+Tab/Ctrl+Shift+Tab` をViewerへ渡す前に消費する。選択後は新しいタブの主コントロールへ明示的にフォーカスする。
+`ViTextEditor.MessageBox` をアプリ内ファサードとして追加し、既存の `MessageBox.Show(...)` 呼び出しをそのまま利用する。Error / Warningの場合だけ `MessageBoxIcon.None` へ変換してからWindows標準MessageBoxへ委譲する。これにより、各エラー処理へ個別修正を入れず、今後追加されるエラー／警告ダイアログも同じルールで無音化する。
 
 ## 次候補
 
