@@ -1,21 +1,25 @@
-# CURRENT - v0.1.21
+# CURRENT - v0.1.22
 
 ## 目的
 
-エラー／警告表示時にWindows標準の効果音を鳴らさず、メッセージ内容や操作性は従来どおり維持する。
+別PCへ持ち運ぶ際に、`vi_text_editor.exe` 1ファイルだけをコピーして実行できるWindows x64 single-file self-contained配布を追加する。
 
-## v0.1.21 スコープ
+## v0.1.22 スコープ
 
-- [x] `MessageBoxIcon.Error` / `MessageBoxIcon.Warning` によるWindows標準効果音を抑止
-- [x] エラー／警告メッセージ本文とボタン構成は変更しない
-- [x] Information / Questionなど通常の情報・確認ダイアログの意味は維持
-- [x] 個別箇所ではなくアプリ共通のMessageBoxラッパーで一元管理
-- [x] README.mdへv0.1.21変更履歴を追記
-- [x] ハーネスをv0.1.21へ更新
+- [x] 従来のWindows x64自己完結フォルダー版を維持
+- [x] Windows x64 single-file self-contained publishを追加
+- [x] Scintilla等のネイティブライブラリをEXEへ同梱し、実行時自己展開する設定を追加
+- [x] Single-file出力が `vi_text_editor.exe` 1ファイルだけであることをCIで検証
+- [x] Single-file EXEをGitHub Actions Artifactとして生成
+- [x] ローカル用 `publish_windows_single_file.cmd` を追加
+- [x] README.mdへv0.1.22変更履歴と1ファイル版利用方法を追記
+- [x] ハーネスをv0.1.22へ更新
 
 ## 実装方針
 
-`ViTextEditor.MessageBox` をアプリ内ファサードとして追加し、既存の `MessageBox.Show(...)` 呼び出しをそのまま利用する。Error / Warningの場合だけ `MessageBoxIcon.None` へ変換してからWindows標準MessageBoxへ委譲する。これにより、各エラー処理へ個別修正を入れず、今後追加されるエラー／警告ダイアログも同じルールで無音化する。
+`.NET 10` の `PublishSingleFile=true` と `IncludeNativeLibrariesForSelfExtract=true` を利用する。`EnableCompressionInSingleFile=true` で配布サイズを抑え、`DebugType=None` / `DebugSymbols=false` によりPDBを配布出力から除外する。CIでは出力ディレクトリを再帰確認し、ファイル数が1かつ名前が `vi_text_editor.exe` であることを必須条件とする。
+
+従来の `vi_text_editor-win-x64` Artifactは互換性のため残し、新たに `vi_text_editor-win-x64-single-file` Artifactを追加する。
 
 ## 次候補
 
