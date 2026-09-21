@@ -1,32 +1,39 @@
-# CURRENT - v0.1.16
+# CURRENT - v0.1.17
 
 ## 目的
 
-v0.1.15でも一部環境で右下のX/Y座標が見えない問題を解消する。ToolStrip/StatusStripのoverflowレイアウトに依存しない専用表示へ変更し、座標を確実に右下へ表示する。
+改行のないJSONの整形を安定させ、Vim 9.2 `motion.txt` と照合して常用頻度の高い未対応カーソル移動を追加する。
 
-## v0.1.16 スコープ
+## v0.1.17 スコープ
 
-- [x] 既存のToolStripStatusLabelによる座標表示をワークスペースでは非表示化
-- [x] StatusStrip右端に通常のWinForms `Label` を重ねる専用座標表示へ変更
-- [x] StatusStrip右端に座標用190pxを予約し、encoding/EOL表示との重なりを防止
-- [x] `X=桁  Y=行` を1始まりで表示
-- [x] カーソル移動・マウス操作・vi操作・リサイズ後に座標を更新
-- [x] タブ埋め込み時のToolStrip overflowに座標表示を依存させない
-- [x] バイナリ表示時は従来のpositionステータス文字列を専用表示へ転記
-- [x] v0.1.15のシンタックス強調、タブ、Large File、JSON整形、Markdownプレビュー、vi/Ex操作を維持
-- [x] ハーネスをv0.1.16へ更新
+- [x] 正しい1行compact JSONを整形できることを回帰テスト化
+- [x] 厳密JSONパースを最優先し、失敗時のみ機械生成JSONの軽微な表記揺れを安全に補正
+- [x] 先頭BOM、文字列外Unicode空白、数値符号直後の空白、Unicode/全角符号を補正
+- [x] JSON文字列リテラル内部は補正しない
+- [x] `%` で `()[]{}` の対応括弧へ移動
+- [x] `N%` でファイルのN%位置へ移動
+- [x] `f/F/t/T` と `;/,` を追加
+- [x] `(`/`)` の文移動、`{`/`}` の段落移動を追加
+- [x] `H/M/L` の画面位置移動を追加
+- [x] `+/-/_/|` を追加
+- [x] `Ctrl+E/Ctrl+Y` の表示スクロールを追加
+- [x] `ge/gE` を追加
+- [x] カーソル移動へ数値プレフィックスを追加（`5j`, `3w`, `50%`, `10G`, `3|`, `2gg` 等）
+- [x] `f/F/t/T` の対象文字を編集コマンドより先にmotion targetとして処理
+- [x] v0.1.16の座標表示、タブ、履歴、シンタックス強調、Large File、Markdown、Ex機能を維持
+- [x] ハーネスをv0.1.17へ更新
 
 ## 実装方針
 
-WinFormsのStatusStrip内部アイテムは、埋め込みフォームの幅やToolStripレイアウト計算によってoverflowへ送られる場合がある。v0.1.16では座標をToolStripItemとして扱わず、StatusStripの右端領域に通常のLabelコントロールを重ねる。これによりToolStripのoverflow判定から完全に分離する。
+カーソル移動ロジックは `ViNavigationProcessor` に集約し、Coreで単体テスト可能な状態を維持する。Windows側では埋め込みMainFormの `KeyPreview` を利用し、motionキーをScintilla/編集コマンドより先に処理する。JSONは標準準拠の厳密パースを最初に試し、明確に安全な表記揺れだけを文字列外で正規化して再試行する。
 
 ## 次候補
 
-1. UI自動テストを追加し、座標ラベルのVisible/BoundsをWindows CIで検証
-2. ユーザーが配色テーマを選べる機能
-3. シンタックス強調ON/OFFと拡張子ごとの手動言語指定
-4. タブの前回セッション復元、タブのドラッグ並べ替え、ピン留め
-5. Markdownライブプレビュー（編集と同期）
-6. JSONツリー表示 / JSONPath検索
-7. Large Fileモードのバックグラウンド索引作成と進捗表示
-8. 数値プレフィックス (`3yy`, `3w`, `5j`, `2dw` など)
+1. operator + motion の完全化（`d%`, `dfx`, `c}`, `y2w`, `3dd` 等）
+2. Visualモードとtext object (`iw`, `aw`, `i(`, `a{` 等)
+3. mark/jumplist (`m{a-z}`, `'a`, `` `a ``, Ctrl+O/Ctrl+I)
+4. wrapped screen-line motion (`gj/gk/g0/g$/g^`)
+5. タブの前回セッション復元、ドラッグ並べ替え、ピン留め
+6. Markdownライブプレビュー
+7. JSONツリー表示 / JSONPath検索
+8. UI自動テスト
