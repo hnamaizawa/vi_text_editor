@@ -35,7 +35,10 @@ internal sealed class WorkspaceFileDropSupport : IDisposable
             RegisterRecursively(child);
     }
 
-    private void ControlOnControlAdded(object? sender, ControlEventArgs e) => RegisterRecursively(e.Control);
+    private void ControlOnControlAdded(object? sender, ControlEventArgs e)
+    {
+        if (e.Control is { } control) RegisterRecursively(control);
+    }
 
     private static string[] GetDroppedFiles(IDataObject? data)
     {
