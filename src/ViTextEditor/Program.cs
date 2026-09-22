@@ -8,6 +8,7 @@ namespace ViTextEditor;
 internal static class Program
 {
     private const string StartupSmokeTestArgument = "--startup-smoke-test";
+    private const string StartupOpenSmokeTestArgument = "--startup-open-smoke-test";
 
     [STAThread]
     private static int Main(string[] args)
@@ -22,7 +23,23 @@ internal static class Program
 
         ApplicationConfiguration.Initialize();
 
-        if (args.Any(arg => string.Equals(arg, StartupSmokeTestArgument, StringComparison.OrdinalIgnoreCase)))
+        var startupSmokeTest = args.Any(arg => string.Equals(arg, StartupSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
+        var startupOpenSmokeTest = args.Any(arg => string.Equals(arg, StartupOpenSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
+        var startupPaths = args
+            .Where(arg => !string.Equals(arg, StartupSmokeTestArgument, StringComparison.OrdinalIgnoreCase) &&
+                          !string.Equals(arg, StartupOpenSmokeTestArgument, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        if (startupOpenSmokeTest)
+        {
+            if (startupPaths.Length == 0) return 2;
+
+            using var workspace = new EditorWorkspaceForm(startupPaths);
+            workspace.CreateControl();
+            return startupPaths.All(workspace.IsPathOpen) ? 0 : 3;
+        }
+
+        if (startupSmokeTest)
         {
             // CI/local packaging smoke test: constructing the workspace creates the
             // embedded MainForm and Scintilla control, so native-library startup
@@ -32,7 +49,10 @@ internal static class Program
             return 0;
         }
 
-        Application.Run(new EditorWorkspaceForm());
+        // Windows Explorer / "Open with" passes selected files as command-line
+        // arguments. Opening them here allows .txt and other associated files to be
+        // opened by double-clicking once vi_text_editor is selected as the default app.
+        Application.Run(new EditorWorkspaceForm(startupPaths));
         return 0;
     }
 
