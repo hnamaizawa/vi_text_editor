@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Text;
 using ScintillaNET;
+using RuntimeArchitecture = System.Runtime.InteropServices.Architecture;
 
 namespace ViTextEditor;
 
@@ -50,10 +51,10 @@ internal static class Program
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var rid = RuntimeInformation.ProcessArchitecture switch
         {
-            Architecture.X64 => "win-x64",
-            Architecture.X86 => "win-x86",
-            Architecture.Arm64 => "win-arm64",
-            Architecture.Arm => "win-arm",
+            RuntimeArchitecture.X64 => "win-x64",
+            RuntimeArchitecture.X86 => "win-x86",
+            RuntimeArchitecture.Arm64 => "win-arm64",
+            RuntimeArchitecture.Arm => "win-arm",
             _ => "win-x64"
         };
 
