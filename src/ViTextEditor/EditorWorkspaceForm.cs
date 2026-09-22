@@ -117,7 +117,10 @@ internal sealed class EditorWorkspaceForm : Form
 
         control.DragEnter += FileDropOnDragEnter;
         control.DragDrop += FileDropOnDragDrop;
-        control.ControlAdded += (_, e) => EnableFileDrop(e.Control);
+        control.ControlAdded += (_, e) =>
+        {
+            if (e.Control is { } child) EnableFileDrop(child);
+        };
         foreach (Control child in control.Controls) EnableFileDrop(child);
     }
 

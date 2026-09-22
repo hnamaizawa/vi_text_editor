@@ -50,9 +50,9 @@ internal static class Program
         {
             if (startupPaths.Length == 0) return 2;
 
-            using var workspace = new EditorWorkspaceForm(startupPaths);
-            workspace.CreateControl();
-            return startupPaths.All(workspace.IsPathOpen) ? 0 : 3;
+            using var smokeWorkspace = new EditorWorkspaceForm(startupPaths);
+            smokeWorkspace.CreateControl();
+            return startupPaths.All(smokeWorkspace.IsPathOpen) ? 0 : 3;
         }
 
         if (startupSmokeTest)
@@ -60,8 +60,8 @@ internal static class Program
             // CI/local packaging smoke test: constructing the workspace creates the
             // embedded MainForm and Scintilla control, so native-library startup
             // regressions fail here instead of producing a silently exiting EXE.
-            using var workspace = new EditorWorkspaceForm();
-            workspace.CreateControl();
+            using var smokeWorkspace = new EditorWorkspaceForm();
+            smokeWorkspace.CreateControl();
             return 0;
         }
 
