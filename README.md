@@ -2,7 +2,7 @@
 
 Windows向けの軽量テキストエディターです。EmEditor／サクラエディタに近いGUIとファイル操作を持ち、基本操作はvi/Vim系キーバインドで行います。
 
-現在のアプリ版は **v0.1.24** です。
+現在のアプリ版は **v0.1.25** です。
 
 ## 主な特徴
 
@@ -10,6 +10,8 @@ Windows向けの軽量テキストエディターです。EmEditor／サクラ�
 - Windows x64自己完結版に加え、別PCへEXE 1個だけコピーできるsingle-file版を配布
 - GitHub ReleasesのLatestからversion付きSingle-file EXE / Portable ZIPを誰でもダウンロード可能
 - Windowsの「既定のアプリ」「プログラムから開く」から渡されるファイルを起動時に開く
+- 既にvi_text_editorが起動中なら、別ファイルの起動要求を既存ウィンドウの新規タブへ転送
+- Explorerから起動中ウィンドウへファイルをドラッグ＆ドロップして新規タブで開く
 - 通常利用時は.NETの別途インストール不要
 - NORMAL / INSERT / COMMANDを中心としたvi操作
 - 日本語IME、UTF-8 / UTF-8 BOM / Shift_JIS / UTF-16、CRLF / LF対応
@@ -33,6 +35,18 @@ Windows向けの軽量テキストエディターです。EmEditor／サクラ�
 10. AIがLatest ReleaseにSingle-file EXE / Portable ZIPが公開されたことを確認する
 
 ## 変更履歴
+
+### v0.1.25
+
+- 同一Windowsユーザー／セッションではvi_text_editorを単一インスタンスとして動作させるよう変更
+- 既に起動中の状態で `.txt` 等をダブルクリックした場合、2つ目のプロセスはファイルパスを既存プロセスへ転送して終了
+- 既存プロセスは受信したファイルを既存の `OpenPath` 経路で新規タブとして開く
+- 同一ファイルが既に開いている場合は重複タブを作らず既存タブを選択
+- WindowsのNamed Mutex + Named Pipeを利用し、ユーザー／セッション単位でファイルオープン要求を転送
+- 起動中のvi_text_editorへExplorerからファイルをドラッグ＆ドロップして新規タブで開く機能を追加
+- 動的に追加されるEditor / Viewer配下のControlにもドロップ受付を再帰的に設定
+- 通常版／Single-file版の双方で、一次プロセス起動→二次プロセスへファイル指定→一次側で受信・オープン、までCIスモークテスト
+- Release workflowでもsingle-instance forwardingを配布前に再検証
 
 ### v0.1.24
 
@@ -423,7 +437,13 @@ v0.1.24以降はWindowsから渡されたファイルパスを起動時に開き
 
 以後は `.txt` のダブルクリックで対象ファイルがvi_text_editorに渡され、そのファイルを開きます。スペースを含むパスにも対応します。複数ファイルを一度に渡された場合は複数タブで開きます。
 
+**v0.1.25以降は、vi_text_editorが既に起動している場合も新しいウィンドウを増やさず、既存ウィンドウへファイルパスを転送して新規タブで開きます。** 同じファイルが既に開いている場合はそのタブを選択します。
+
 Windowsの既定アプリ設定はEXEのフルパスを保持するため、更新時も `C:\Tools\vi_text_editor\vi_text_editor.exe` を新しいSingle-file EXEで**同じ場所に上書き**する方法を推奨します。
+
+### 起動中のvi_text_editorへファイルをドラッグ＆ドロップ
+
+v0.1.25以降はExplorerからファイルをvi_text_editorのウィンドウへドラッグ＆ドロップすると、そのファイルを新規タブで開きます。複数ファイルの同時ドロップにも対応します。同じファイルが既に開いている場合は重複タブを作らず、そのタブを選択します。
 
 ## GitHub Releaseの自動公開
 
@@ -433,9 +453,10 @@ v0.1.24以降、versioned PRが `main` へマージされるとRelease workflow�
 2. Portable版 / Single-file版をpublish
 3. 両方のEXEで通常起動スモークテスト
 4. 両方のEXEへスペースを含む `.txt` パスを渡すWindows Shell相当のオープンスモークテスト
-5. プロジェクトVersionと同じ `vX.Y.Z` タグを作成
-6. version付きSingle-file EXE / Portable ZIPをRelease Assetsへ登録
-7. ReleaseをLatestとして公開
+5. 両方のEXEで一次プロセス起動→二次プロセスからファイル転送→一次側でオープン、のsingle-instance forwardingスモークテスト
+6. プロジェクトVersionと同じ `vX.Y.Z` タグを作成
+7. version付きSingle-file EXE / Portable ZIPをRelease Assetsへ登録
+8. ReleaseをLatestとして公開
 
 同じversionのReleaseが既に存在するmain更新では、重複Releaseを作成しません。
 
