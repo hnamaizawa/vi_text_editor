@@ -69,7 +69,7 @@ jobs:
         if: steps.release_info.outputs.skip != 'true'
         run: dotnet publish src/ViTextEditor/ViTextEditor.csproj --configuration Release --runtime win-x64 --self-contained true --output artifacts/vi_text_editor-win-x64
 
-      - name: Smoke-test portable build and shell file open
+      - name: Smoke-test portable build, shell open, and single-instance forwarding
         if: steps.release_info.outputs.skip != 'true'
         shell: pwsh
         run: |
@@ -84,6 +84,31 @@ jobs:
           $arguments = "--startup-open-smoke-test `"$sample`""
           $shellOpen = Start-Process -FilePath $exe -ArgumentList $arguments -PassThru -Wait
           if ($shellOpen.ExitCode -ne 0) { throw "Portable shell-open smoke test failed with exit code $($shellOpen.ExitCode)." }
+
+          $ready = Join-Path $env:RUNNER_TEMP "vi-editor-release-portable-primary.ready"
+          $result = Join-Path $env:RUNNER_TEMP "vi-editor-release-portable-forward.result"
+          $forwarded = Join-Path $env:RUNNER_TEMP "vi text editor release portable forwarded.txt"
+          Remove-Item $ready, $result -ErrorAction SilentlyContinue
+          Set-Content -Path $forwarded -Value "Release single-instance forwarding smoke test" -Encoding utf8
+          $hostArguments = "--single-instance-smoke-host `"$ready`" `"$result`""
+          $host = Start-Process -FilePath $exe -ArgumentList $hostArguments -PassThru
+          for ($i = 0; $i -lt 100 -and -not (Test-Path $ready); $i++) {
+            if ($host.HasExited) { throw "Portable primary smoke host exited before becoming ready (exit $($host.ExitCode))." }
+            Start-Sleep -Milliseconds 100
+          }
+          if (-not (Test-Path $ready)) {
+            Stop-Process -Id $host.Id -Force -ErrorAction SilentlyContinue
+            throw "Portable primary smoke host did not become ready."
+          }
+          $client = Start-Process -FilePath $exe -ArgumentList "`"$forwarded`"" -PassThru -Wait
+          if ($client.ExitCode -ne 0) { throw "Portable secondary instance failed with exit code $($client.ExitCode)." }
+          if (-not $host.WaitForExit(15000)) {
+            Stop-Process -Id $host.Id -Force -ErrorAction SilentlyContinue
+            throw "Portable primary did not receive the forwarded file."
+          }
+          if ($host.ExitCode -ne 0 -or -not (Test-Path $result)) {
+            throw "Portable single-instance forwarding smoke test failed (host exit $($host.ExitCode))."
+          }
 
       - name: Publish single-file Windows x64 build
         if: steps.release_info.outputs.skip != 'true'
@@ -119,6 +144,31 @@ jobs:
           $arguments = "--startup-open-smoke-test `"$sample`""
           $shellOpen = Start-Process -FilePath $exe -ArgumentList $arguments -PassThru -Wait
           if ($shellOpen.ExitCode -ne 0) { throw "Single-file shell-open smoke test failed with exit code $($shellOpen.ExitCode)." }
+
+          $ready = Join-Path $env:RUNNER_TEMP "vi-editor-release-single-primary.ready"
+          $result = Join-Path $env:RUNNER_TEMP "vi-editor-release-single-forward.result"
+          $forwarded = Join-Path $env:RUNNER_TEMP "vi text editor release single forwarded.txt"
+          Remove-Item $ready, $result -ErrorAction SilentlyContinue
+          Set-Content -Path $forwarded -Value "Release single-instance forwarding smoke test" -Encoding utf8
+          $hostArguments = "--single-instance-smoke-host `"$ready`" `"$result`""
+          $host = Start-Process -FilePath $exe -ArgumentList $hostArguments -PassThru
+          for ($i = 0; $i -lt 100 -and -not (Test-Path $ready); $i++) {
+            if ($host.HasExited) { throw "Single-file primary smoke host exited before becoming ready (exit $($host.ExitCode))." }
+            Start-Sleep -Milliseconds 100
+          }
+          if (-not (Test-Path $ready)) {
+            Stop-Process -Id $host.Id -Force -ErrorAction SilentlyContinue
+            throw "Single-file primary smoke host did not become ready."
+          }
+          $client = Start-Process -FilePath $exe -ArgumentList "`"$forwarded`"" -PassThru -Wait
+          if ($client.ExitCode -ne 0) { throw "Single-file secondary instance failed with exit code $($client.ExitCode)." }
+          if (-not $host.WaitForExit(15000)) {
+            Stop-Process -Id $host.Id -Force -ErrorAction SilentlyContinue
+            throw "Single-file primary did not receive the forwarded file."
+          }
+          if ($host.ExitCode -ne 0 -or -not (Test-Path $result)) {
+            throw "Single-file single-instance forwarding smoke test failed (host exit $($host.ExitCode))."
+          }
 
       - name: Package versioned release assets
         if: steps.release_info.outputs.skip != 'true'
