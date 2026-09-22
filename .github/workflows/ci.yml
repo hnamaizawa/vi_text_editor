@@ -45,6 +45,16 @@ jobs:
           if ($process.ExitCode -ne 0) {
             throw "Portable startup smoke test failed with exit code $($process.ExitCode)."
           }
+      - name: Smoke-test portable Windows shell file open
+        shell: pwsh
+        run: |
+          $sample = Join-Path $env:RUNNER_TEMP "vi text editor shell open smoke.txt"
+          Set-Content -Path $sample -Value "Windows shell startup smoke test" -Encoding utf8
+          $arguments = "--startup-open-smoke-test `"$sample`""
+          $process = Start-Process -FilePath "artifacts/vi_text_editor-win-x64/vi_text_editor.exe" -ArgumentList $arguments -PassThru -Wait
+          if ($process.ExitCode -ne 0) {
+            throw "Portable shell-open smoke test failed with exit code $($process.ExitCode)."
+          }
       - name: Upload portable Windows build
         uses: actions/upload-artifact@v4
         with:
@@ -85,6 +95,16 @@ jobs:
           $process = Start-Process -FilePath "artifacts/vi_text_editor-win-x64-single-file/vi_text_editor.exe" -ArgumentList "--startup-smoke-test" -PassThru -Wait
           if ($process.ExitCode -ne 0) {
             throw "Single-file startup smoke test failed with exit code $($process.ExitCode)."
+          }
+      - name: Smoke-test single-file Windows shell file open
+        shell: pwsh
+        run: |
+          $sample = Join-Path $env:RUNNER_TEMP "vi text editor single file shell open smoke.txt"
+          Set-Content -Path $sample -Value "Windows shell startup smoke test" -Encoding utf8
+          $arguments = "--startup-open-smoke-test `"$sample`""
+          $process = Start-Process -FilePath "artifacts/vi_text_editor-win-x64-single-file/vi_text_editor.exe" -ArgumentList $arguments -PassThru -Wait
+          if ($process.ExitCode -ne 0) {
+            throw "Single-file shell-open smoke test failed with exit code $($process.ExitCode)."
           }
       - name: Upload single-file Windows executable
         uses: actions/upload-artifact@v4
