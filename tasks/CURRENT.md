@@ -1,30 +1,37 @@
-# CURRENT - v0.1.23
+# CURRENT - v0.1.24
 
 ## 目的
 
-v0.1.22のWindows x64 single-file EXEが一部PCで起動直後に終了する問題を修正し、今後はCIで実際の起動まで検証する。
+GitHub Releasesから誰でも最新のSingle-file EXEを取得できる配布フローを自動化し、Windows Explorerからテキストファイルをダブルクリックした際にvi_text_editorで開けるよう、Windows Shellから渡されるファイルパス引数に対応する。
 
-## v0.1.23 スコープ
+## v0.1.24 スコープ
 
-- [x] Single-file起動時に.NETの `NATIVE_DLL_SEARCH_DIRECTORIES` から自己展開済みネイティブDLLの場所を取得
-- [x] Scintillaを最初に生成する前に `ScintillaNativeLibrary.SatelliteDirectory` を設定
-- [x] 通常のフォルダー型publishでも従来どおりScintillaを読み込めるfallbackを維持
-- [x] `%TEMP%\.net\...` へのbundle展開先も防御的fallbackとして探索
-- [x] `--startup-smoke-test` を追加し、EditorWorkspaceForm / MainForm / Scintillaの初期化まで実行
-- [x] CIで通常版EXEとsingle-file EXEの両方を実際に起動し、終了コード0を必須化
-- [x] `publish_windows_single_file.cmd` でも生成後にstartup smoke testを実施
-- [x] README.mdへv0.1.23変更履歴を追記
-- [x] ハーネスをv0.1.23へ更新
+- [x] Windows Shell / 「プログラムから開く」から渡されるファイルパスを起動時に開く
+- [x] スペースを含むファイルパスに対応
+- [x] 複数ファイルパスが渡された場合は複数タブで開く
+- [x] 起動時にファイルパスがある場合は余分な空タブを作成しない
+- [x] `--startup-open-smoke-test` を追加し、実際のファイルパス起動をCIで検証
+- [x] 通常版／Single-file版の両方でWindows Shell相当のファイルオープンをスモークテスト
+- [x] `.github/workflows/release.yml` を追加
+- [x] mainへのversioned merge後にプロジェクトVersionから `vX.Y.Z` タグを自動作成
+- [x] Release workflowでCore tests / build / publish / startup smoke / shell-open smokeを再確認
+- [x] version付きSingle-file EXEとPortable ZIPをGitHub Release Assetsへ登録
+- [x] 新しいReleaseをLatestとして公開
+- [x] 既に同一versionのReleaseが存在する場合は重複公開しない
+- [x] README.mdへv0.1.24変更履歴、Release取得方法、Windows既定アプリ設定手順を追記
+- [x] ハーネスをv0.1.24へ更新
 
-## 原因
+## Windowsでのダブルクリック動作
 
-Scintilla5.NET 7.0.0は `Scintilla.dll` と `Lexilla.dll` を実ファイルとして検索する。Single-file publishではネイティブDLLは `%TEMP%\.net\...` へ自己展開されるが、Scintilla側の既定検索ではその展開先を直接参照できず、最初のScintilla生成時に失敗してプロセスが終了する場合がある。
+Windowsは既定アプリまたは「プログラムから開く」で選択されたEXEへ、対象ファイルのパスをコマンドライン引数として渡す。v0.1.23までは `Program.Main(string[] args)` がその引数を利用していなかったため、vi_text_editor自体は起動しても対象ファイルを開かなかった。
 
-## 実装方針
+v0.1.24では通常引数を起動対象パスとして `EditorWorkspaceForm` へ渡し、既存の `OpenPath` 経路で開く。Windows側で一度 `vi_text_editor.exe` を `.txt` の既定アプリとして選択すれば、その後はダブルクリックで対象ファイルを開ける。
 
-.NETホストが公開する `NATIVE_DLL_SEARCH_DIRECTORIES` を最優先で確認し、`Scintilla.dll` と `Lexilla.dll` が同一ディレクトリに存在する場所を `ScintillaNativeLibrary.SatelliteDirectory` に設定してからWinForms/Scintillaを初期化する。フォルダー型publish用に `AppContext.BaseDirectory` と実行ファイルディレクトリもfallbackとして残す。
+## Release運用
 
-CIではファイル生成の確認だけでは不十分なため、配布EXEへ `--startup-smoke-test` を渡し、ワークスペースとScintilla初期化が例外なく完了することを検証する。
+`.github/workflows/release.yml` は `main` へのpushで起動する。`ViTextEditor.csproj` の `<Version>` を読み取り、同じversionのReleaseがまだ存在しない場合のみ、テストと配布物の実起動確認を行った後に `vX.Y.Z` タグを作成し、GitHub ReleaseをLatestとして公開する。
+
+今後ユーザーが「マージしてください」と指示した場合は、PRマージ後にRelease workflowの成功、Latest Release、Single-file EXE / Portable ZIP Assetsを確認する。
 
 ## 次候補
 
