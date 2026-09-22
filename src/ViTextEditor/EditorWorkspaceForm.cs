@@ -22,6 +22,8 @@ internal sealed class EditorWorkspaceForm : Form
         _tabs.SelectedIndexChanged += (_, _) => UpdateWorkspaceTitle();
         Controls.Add(_tabs);
 
+        EnableFileDrop(this);
+
         FormClosing += WorkspaceOnFormClosing;
 
         var paths = startupPaths?
@@ -90,6 +92,50 @@ internal sealed class EditorWorkspaceForm : Form
             return;
         }
         AddEditorTab(fullPath, select);
+    }
+
+    public void OpenPaths(IEnumerable<string> paths)
+    {
+        foreach (var path in paths) OpenPath(path, select: true);
+    }
+
+    public void ActivateFromExternalRequest()
+    {
+        if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+        Show();
+        Activate();
+        BringToFront();
+        FocusSelectedTabContent();
+    }
+
+    private void EnableFileDrop(Control control)
+    {
+        if (control is WebBrowser) return;
+
+        try { control.AllowDrop = true; }
+        catch (InvalidOperationException) { return; }
+
+        control.DragEnter += FileDropOnDragEnter;
+        control.DragDrop += FileDropOnDragDrop;
+        control.ControlAdded += (_, e) =>
+        {
+            if (e.Control is { } child) EnableFileDrop(child);
+        };
+        foreach (Control child in control.Controls) EnableFileDrop(child);
+    }
+
+    private static void FileDropOnDragEnter(object? sender, DragEventArgs e)
+    {
+        e.Effect = e.Data?.GetDataPresent(DataFormats.FileDrop) == true
+            ? DragDropEffects.Copy
+            : DragDropEffects.None;
+    }
+
+    private void FileDropOnDragDrop(object? sender, DragEventArgs e)
+    {
+        if (e.Data?.GetData(DataFormats.FileDrop) is not string[] paths) return;
+        OpenPaths(paths.Where(File.Exists));
+        ActivateFromExternalRequest();
     }
 
     public void OpenMarkdownPreview(MainForm source)
@@ -240,14 +286,14 @@ internal sealed class EditorWorkspaceForm : Form
             ReplaceHelpItem(help, item => item.Text.Contains("バージョン情報", StringComparison.Ordinal),
                 new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show(
                     child,
-                    "vi_text_editor v0.1.24\nGitHub Releases / Windows file association startup",
+                    "vi_text_editor v0.1.25\nSingle instance / drag and drop",
                     "バージョン情報",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information)));
             ReplaceHelpItem(help, item => item.Text.Contains("ワークスペース操作", StringComparison.Ordinal),
-                new ToolStripMenuItem("v0.1.24 ワークスペース操作", null, (_, _) => MessageBox.Show(
+                new ToolStripMenuItem("v0.1.25 ワークスペース操作", null, (_, _) => MessageBox.Show(
                     child,
-                    "Ctrl+Shift+J: JSON整形\nCtrl+Shift+M: Markdownプレビュー\nCtrl+Tab / Ctrl+Shift+Tab: タブ切替\nCtrl+PageDown / Ctrl+PageUp: タブ切替\n\nMarkdown vi: j/k, Ctrl+F/B/D/U, gg/G, / ? n/N\nMarkdown COMMAND: :set ic / :set noic / :set ic?\nCtrl+マウスホイール: デバウンスされた拡大縮小\n\nWindows: 既定のアプリ／プログラムから開く経由のファイルパスを起動時に開く",
+                    "Ctrl+Shift+J: JSON整形\nCtrl+Shift+M: Markdownプレビュー\nCtrl+Tab / Ctrl+Shift+Tab: タブ切替\nCtrl+PageDown / Ctrl+PageUp: タブ切替\n\nMarkdown vi: j/k, Ctrl+F/B/D/U, gg/G, / ? n/N\nMarkdown COMMAND: :set ic / :set noic / :set ic?\nCtrl+マウスホイール: デバウンスされた拡大縮小\n\nWindows: 二重起動せず、Shell起動／ドラッグ＆ドロップしたファイルを既存ウィンドウの新規タブで開く",
                     "ワークスペース操作",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information)));

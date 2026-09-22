@@ -1,37 +1,27 @@
-# CURRENT - v0.1.24
+# CURRENT - v0.1.25
 
 ## 目的
 
-GitHub Releasesから誰でも最新のSingle-file EXEを取得できる配布フローを自動化し、Windows Explorerからテキストファイルをダブルクリックした際にvi_text_editorで開けるよう、Windows Shellから渡されるファイルパス引数に対応する。
+Windowsでvi_text_editorが既に起動している場合、Explorerからのファイル起動で別ウィンドウを作らず、既存ワークスペースの新規タブとして開く。起動中のウィンドウへのファイルのドラッグ＆ドロップも同じタブオープン経路で扱う。
 
-## v0.1.24 スコープ
+## v0.1.25 スコープ
 
-- [x] Windows Shell / 「プログラムから開く」から渡されるファイルパスを起動時に開く
-- [x] スペースを含むファイルパスに対応
-- [x] 複数ファイルパスが渡された場合は複数タブで開く
-- [x] 起動時にファイルパスがある場合は余分な空タブを作成しない
-- [x] `--startup-open-smoke-test` を追加し、実際のファイルパス起動をCIで検証
-- [x] 通常版／Single-file版の両方でWindows Shell相当のファイルオープンをスモークテスト
-- [x] `.github/workflows/release.yml` を追加
-- [x] mainへのversioned merge後にプロジェクトVersionから `vX.Y.Z` タグを自動作成
-- [x] Release workflowでCore tests / build / publish / startup smoke / shell-open smokeを再確認
-- [x] version付きSingle-file EXEとPortable ZIPをGitHub Release Assetsへ登録
-- [x] 新しいReleaseをLatestとして公開
-- [x] 既に同一versionのReleaseが存在する場合は重複公開しない
-- [x] README.mdへv0.1.24変更履歴、Release取得方法、Windows既定アプリ設定手順を追記
-- [x] ハーネスをv0.1.24へ更新
+- [x] 名前付きMutexによる通常起動の単一インスタンス化
+- [x] 名前付きPipeによる後続プロセスから既存プロセスへのファイルパス転送
+- [x] Pipe通信を現在のWindowsユーザーに制限
+- [x] 受信したファイルをUIスレッド上で既存ワークスペースのタブとして開く
+- [x] 最小化された既存ウィンドウを通常表示へ戻す
+- [x] スペースを含むパス／複数ファイルを維持
+- [x] 既存タブの重複抑止とLarge Fileモード判定を再利用
+- [x] ワークスペース／タブ／編集領域へのファイルドラッグ＆ドロップ対応
+- [x] 複数ファイルの同時ドロップ対応
+- [x] 通常版／Single-file版の実プロセス単一インスタンス受信スモークテスト
+- [x] README.md変更履歴・利用手順を更新
+- [x] ハーネスをv0.1.25へ更新
 
-## Windowsでのダブルクリック動作
+## 実装方針
 
-Windowsは既定アプリまたは「プログラムから開く」で選択されたEXEへ、対象ファイルのパスをコマンドライン引数として渡す。v0.1.23までは `Program.Main(string[] args)` がその引数を利用していなかったため、vi_text_editor自体は起動しても対象ファイルを開かなかった。
-
-v0.1.24では通常引数を起動対象パスとして `EditorWorkspaceForm` へ渡し、既存の `OpenPath` 経路で開く。Windows側で一度 `vi_text_editor.exe` を `.txt` の既定アプリとして選択すれば、その後はダブルクリックで対象ファイルを開ける。
-
-## Release運用
-
-`.github/workflows/release.yml` は `main` へのpushで起動する。`ViTextEditor.csproj` の `<Version>` を読み取り、同じversionのReleaseがまだ存在しない場合のみ、テストと配布物の実起動確認を行った後に `vX.Y.Z` タグを作成し、GitHub ReleaseをLatestとして公開する。
-
-今後ユーザーが「マージしてください」と指示した場合は、PRマージ後にRelease workflowの成功、Latest Release、Single-file EXE / Portable ZIP Assetsを確認する。
+後続プロセスは新しいEditorWorkspaceFormを生成せず、ファイルパスをJSONとして名前付きPipeへ送信して終了する。先に起動したプロセスは受信パスをUIスレッドへ渡し、既存の `EditorWorkspaceForm.OpenPath` を利用する。ドラッグ＆ドロップも同じ経路を利用し、重複タブ抑止、ファイル存在確認、64 MiB以上のLarge Fileモードを一元的に維持する。
 
 ## 次候補
 
