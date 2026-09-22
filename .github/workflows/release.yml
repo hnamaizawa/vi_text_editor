@@ -85,6 +85,23 @@ jobs:
           $shellOpen = Start-Process -FilePath $exe -ArgumentList $arguments -PassThru -Wait
           if ($shellOpen.ExitCode -ne 0) { throw "Portable shell-open smoke test failed with exit code $($shellOpen.ExitCode)." }
 
+          $forwarded = Join-Path $env:RUNNER_TEMP "vi text editor release portable forwarded.txt"
+          $marker = Join-Path $env:RUNNER_TEMP "vi-text-editor-release-portable.pass"
+          Set-Content -Path $forwarded -Value "Release existing-instance smoke test" -Encoding utf8
+          Remove-Item $marker -ErrorAction SilentlyContinue
+          $primary = Start-Process -FilePath $exe -ArgumentList "--single-instance-receive-smoke-test `"$marker`" `"$forwarded`"" -PassThru
+          try {
+            Start-Sleep -Seconds 1
+            $secondary = Start-Process -FilePath $exe -ArgumentList "`"$forwarded`"" -PassThru -Wait
+            if ($secondary.ExitCode -ne 0) { throw "Portable forwarding process failed with exit code $($secondary.ExitCode)." }
+            $deadline = (Get-Date).AddSeconds(15)
+            while (-not (Test-Path $marker) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 200 }
+            if (-not (Test-Path $marker)) { throw "Portable primary instance did not receive the forwarded file." }
+          }
+          finally {
+            if (-not $primary.HasExited) { Stop-Process -Id $primary.Id -Force }
+          }
+
       - name: Publish single-file Windows x64 build
         if: steps.release_info.outputs.skip != 'true'
         run: >-
@@ -119,6 +136,23 @@ jobs:
           $arguments = "--startup-open-smoke-test `"$sample`""
           $shellOpen = Start-Process -FilePath $exe -ArgumentList $arguments -PassThru -Wait
           if ($shellOpen.ExitCode -ne 0) { throw "Single-file shell-open smoke test failed with exit code $($shellOpen.ExitCode)." }
+
+          $forwarded = Join-Path $env:RUNNER_TEMP "vi text editor release single forwarded.txt"
+          $marker = Join-Path $env:RUNNER_TEMP "vi-text-editor-release-single.pass"
+          Set-Content -Path $forwarded -Value "Release existing-instance smoke test" -Encoding utf8
+          Remove-Item $marker -ErrorAction SilentlyContinue
+          $primary = Start-Process -FilePath $exe -ArgumentList "--single-instance-receive-smoke-test `"$marker`" `"$forwarded`"" -PassThru
+          try {
+            Start-Sleep -Seconds 1
+            $secondary = Start-Process -FilePath $exe -ArgumentList "`"$forwarded`"" -PassThru -Wait
+            if ($secondary.ExitCode -ne 0) { throw "Single-file forwarding process failed with exit code $($secondary.ExitCode)." }
+            $deadline = (Get-Date).AddSeconds(15)
+            while (-not (Test-Path $marker) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 200 }
+            if (-not (Test-Path $marker)) { throw "Single-file primary instance did not receive the forwarded file." }
+          }
+          finally {
+            if (-not $primary.HasExited) { Stop-Process -Id $primary.Id -Force }
+          }
 
       - name: Package versioned release assets
         if: steps.release_info.outputs.skip != 'true'

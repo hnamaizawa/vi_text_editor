@@ -55,6 +55,28 @@ jobs:
           if ($process.ExitCode -ne 0) {
             throw "Portable shell-open smoke test failed with exit code $($process.ExitCode)."
           }
+      - name: Smoke-test portable existing-instance file receive
+        shell: pwsh
+        run: |
+          $sample = Join-Path $env:RUNNER_TEMP "vi text editor portable forwarded file.txt"
+          $marker = Join-Path $env:RUNNER_TEMP "vi-text-editor-portable-single-instance.pass"
+          Set-Content -Path $sample -Value "Existing instance receive smoke test" -Encoding utf8
+          Remove-Item $marker -ErrorAction SilentlyContinue
+          $primaryArgs = "--single-instance-receive-smoke-test `"$marker`" `"$sample`""
+          $primary = Start-Process -FilePath "artifacts/vi_text_editor-win-x64/vi_text_editor.exe" -ArgumentList $primaryArgs -PassThru
+          try {
+            Start-Sleep -Seconds 1
+            $secondary = Start-Process -FilePath "artifacts/vi_text_editor-win-x64/vi_text_editor.exe" -ArgumentList "`"$sample`"" -PassThru -Wait
+            if ($secondary.ExitCode -ne 0) {
+              throw "Portable forwarding process failed with exit code $($secondary.ExitCode)."
+            }
+            $deadline = (Get-Date).AddSeconds(15)
+            while (-not (Test-Path $marker) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 200 }
+            if (-not (Test-Path $marker)) { throw "Portable primary instance did not receive the forwarded file." }
+          }
+          finally {
+            if (-not $primary.HasExited) { Stop-Process -Id $primary.Id -Force }
+          }
       - name: Upload portable Windows build
         uses: actions/upload-artifact@v4
         with:
@@ -105,6 +127,28 @@ jobs:
           $process = Start-Process -FilePath "artifacts/vi_text_editor-win-x64-single-file/vi_text_editor.exe" -ArgumentList $arguments -PassThru -Wait
           if ($process.ExitCode -ne 0) {
             throw "Single-file shell-open smoke test failed with exit code $($process.ExitCode)."
+          }
+      - name: Smoke-test single-file existing-instance file receive
+        shell: pwsh
+        run: |
+          $sample = Join-Path $env:RUNNER_TEMP "vi text editor single forwarded file.txt"
+          $marker = Join-Path $env:RUNNER_TEMP "vi-text-editor-single-file-instance.pass"
+          Set-Content -Path $sample -Value "Existing instance receive smoke test" -Encoding utf8
+          Remove-Item $marker -ErrorAction SilentlyContinue
+          $primaryArgs = "--single-instance-receive-smoke-test `"$marker`" `"$sample`""
+          $primary = Start-Process -FilePath "artifacts/vi_text_editor-win-x64-single-file/vi_text_editor.exe" -ArgumentList $primaryArgs -PassThru
+          try {
+            Start-Sleep -Seconds 1
+            $secondary = Start-Process -FilePath "artifacts/vi_text_editor-win-x64-single-file/vi_text_editor.exe" -ArgumentList "`"$sample`"" -PassThru -Wait
+            if ($secondary.ExitCode -ne 0) {
+              throw "Single-file forwarding process failed with exit code $($secondary.ExitCode)."
+            }
+            $deadline = (Get-Date).AddSeconds(15)
+            while (-not (Test-Path $marker) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 200 }
+            if (-not (Test-Path $marker)) { throw "Single-file primary instance did not receive the forwarded file." }
+          }
+          finally {
+            if (-not $primary.HasExited) { Stop-Process -Id $primary.Id -Force }
           }
       - name: Upload single-file Windows executable
         uses: actions/upload-artifact@v4

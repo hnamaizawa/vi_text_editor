@@ -1,6 +1,6 @@
 project:
   name: vi_text_editor
-  version: 0.1.24
+  version: 0.1.25
   platform: windows
   ui: winforms
   editor_component: Scintilla5.NET
@@ -88,6 +88,12 @@ non_negotiable_invariants:
   - windows_shell_file_arguments_must_open_existing_files_at_startup
   - windows_shell_file_arguments_with_spaces_must_be_supported
   - multiple_startup_file_arguments_must_open_as_multiple_tabs
+  - normal_application_launch_must_use_a_single_instance_per_windows_user_session
+  - later_windows_shell_file_arguments_must_open_in_the_existing_workspace
+  - single_instance_file_forwarding_must_be_restricted_to_the_current_windows_user
+  - single_instance_file_forwarding_must_support_spaces_and_multiple_paths
+  - file_drop_on_the_existing_workspace_must_open_files_as_document_tabs
+  - shell_forwarding_and_file_drop_must_reuse_workspace_duplicate_and_large_file_policies
   - recent_files_must_persist_under_user_appdata_and_deduplicate_paths
   - files_at_or_above_64_mib_must_open_in_large_file_mode_automatically
   - large_file_mode_must_not_read_the_entire_file_into_a_string_or_byte_array
@@ -166,3 +172,4 @@ required_checks:
   - artifacts/vi_text_editor-win-x64-single-file/vi_text_editor.exe --startup-smoke-test
   - artifacts/vi_text_editor-win-x64/vi_text_editor.exe --startup-open-smoke-test "path with spaces.txt"
   - artifacts/vi_text_editor-win-x64-single-file/vi_text_editor.exe --startup-open-smoke-test "path with spaces.txt"
+  - portable_and_single_file_real_process_single_instance_receive_smoke_tests

@@ -9,6 +9,7 @@ internal static class Program
 {
     private const string StartupSmokeTestArgument = "--startup-smoke-test";
     private const string StartupOpenSmokeTestArgument = "--startup-open-smoke-test";
+    private const string SingleInstanceReceiveSmokeTestArgument = "--single-instance-receive-smoke-test";
 
     [STAThread]
     private static int Main(string[] args)
@@ -25,10 +26,25 @@ internal static class Program
 
         var startupSmokeTest = args.Any(arg => string.Equals(arg, StartupSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
         var startupOpenSmokeTest = args.Any(arg => string.Equals(arg, StartupOpenSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
+        var singleInstanceSmokeIndex = Array.FindIndex(args, arg =>
+            string.Equals(arg, SingleInstanceReceiveSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
+        var singleInstanceSmokeTest = singleInstanceSmokeIndex >= 0;
+        var singleInstanceMarker = singleInstanceSmokeTest && args.Length > singleInstanceSmokeIndex + 1
+            ? args[singleInstanceSmokeIndex + 1]
+            : null;
+        var singleInstanceExpectedPath = singleInstanceSmokeTest && args.Length > singleInstanceSmokeIndex + 2
+            ? args[singleInstanceSmokeIndex + 2]
+            : null;
         var startupPaths = args
             .Where(arg => !string.Equals(arg, StartupSmokeTestArgument, StringComparison.OrdinalIgnoreCase) &&
                           !string.Equals(arg, StartupOpenSmokeTestArgument, StringComparison.OrdinalIgnoreCase))
             .ToArray();
+
+        if (singleInstanceSmokeTest)
+        {
+            if (singleInstanceMarker is null || singleInstanceExpectedPath is null) return 5;
+            startupPaths = [];
+        }
 
         if (startupOpenSmokeTest)
         {
@@ -49,10 +65,41 @@ internal static class Program
             return 0;
         }
 
+        using var broker = SingleInstanceFileBroker.Acquire();
+        if (!broker.IsPrimary)
+        {
+            return SingleInstanceFileBroker.ForwardFiles(startupPaths, TimeSpan.FromSeconds(5)) ? 0 : 4;
+        }
+
         // Windows Explorer / "Open with" passes selected files as command-line
-        // arguments. Opening them here allows .txt and other associated files to be
-        // opened by double-clicking once vi_text_editor is selected as the default app.
-        Application.Run(new EditorWorkspaceForm(startupPaths));
+        // arguments. A later launch forwards those files to this primary workspace.
+        using var workspace = new EditorWorkspaceForm(startupPaths);
+        workspace.CreateControl();
+        broker.StartListening(paths =>
+        {
+            if (workspace.IsDisposed || workspace.Disposing) return;
+            try
+            {
+                workspace.BeginInvoke(new Action(() =>
+                {
+                    if (workspace.IsDisposed || workspace.Disposing) return;
+                    workspace.OpenPaths(paths);
+                    workspace.ActivateFromExternalRequest();
+
+                    if (singleInstanceSmokeTest &&
+                        singleInstanceMarker is not null &&
+                        singleInstanceExpectedPath is not null &&
+                        workspace.IsPathOpen(singleInstanceExpectedPath))
+                    {
+                        File.WriteAllText(singleInstanceMarker, "PASS");
+                        workspace.Close();
+                    }
+                }));
+            }
+            catch (InvalidOperationException) when (workspace.IsDisposed || workspace.Disposing) { }
+        });
+
+        Application.Run(workspace);
         return 0;
     }
 
