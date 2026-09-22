@@ -9,7 +9,7 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>vi_text_editor</AssemblyName>
     <RootNamespace>ViTextEditor</RootNamespace>
-    <Version>0.1.23</Version>
+    <Version>0.1.24</Version>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\ViTextEditor.Core\ViTextEditor.Core.csproj" />

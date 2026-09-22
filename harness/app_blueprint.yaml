@@ -1,11 +1,11 @@
 project:
   name: vi_text_editor
-  version: 0.1.23
+  version: 0.1.24
   platform: windows
   ui: winforms
   editor_component: Scintilla5.NET
   development_runtime: .NET 10
-  distribution: self-contained Windows x64 + single-file Windows x64
+  distribution: self-contained Windows x64 + single-file Windows x64 + GitHub Releases
 
 development_model:
   - human_describes_requirements_in_natural_language
@@ -15,6 +15,8 @@ development_model:
   - ai_opens_pull_request
   - human_reviews_pull_request
   - ai_merges_only_after_human_requests_merge
+  - successful_versioned_main_merge_automatically_creates_version_tag_and_github_release
+  - ai_verifies_latest_release_contains_single_file_exe_and_portable_zip_after_merge
   - ai_provides_downloadable_portable_zip_and_single_file_exe_after_successful_merge
 
 non_negotiable_invariants:
@@ -83,6 +85,9 @@ non_negotiable_invariants:
   - workspace_tab_switch_must_focus_the_newly_selected_tab_content
   - workspace_json_and_markdown_shortcuts_must_target_only_the_selected_editor_tab
   - inactive_tab_toolstrip_shortcuts_must_not_execute_document_actions
+  - windows_shell_file_arguments_must_open_existing_files_at_startup
+  - windows_shell_file_arguments_with_spaces_must_be_supported
+  - multiple_startup_file_arguments_must_open_as_multiple_tabs
   - recent_files_must_persist_under_user_appdata_and_deduplicate_paths
   - files_at_or_above_64_mib_must_open_in_large_file_mode_automatically
   - large_file_mode_must_not_read_the_entire_file_into_a_string_or_byte_array
@@ -145,7 +150,12 @@ non_negotiable_invariants:
   - single_file_windows_distribution_must_contain_exactly_one_vi_text_editor_executable
   - single_file_startup_must_configure_scintilla_native_directory_before_first_scintilla_use
   - portable_and_single_file_distributions_must_pass_real_startup_smoke_tests
-  - pull_requests_must_pass_core_tests_windows_build_portable_publish_single_file_publish_and_startup_smoke_tests
+  - portable_and_single_file_distributions_must_pass_windows_shell_open_smoke_tests
+  - github_release_tag_must_match_project_version
+  - successful_versioned_main_merge_must_publish_a_github_release
+  - github_release_must_be_marked_latest
+  - github_release_must_include_versioned_single_file_exe_and_portable_zip_assets
+  - pull_requests_must_pass_core_tests_windows_build_portable_publish_single_file_publish_startup_and_shell_open_smoke_tests
 
 required_checks:
   - dotnet test tests/ViTextEditor.Core.Tests/ViTextEditor.Core.Tests.csproj --configuration Release
@@ -154,3 +164,5 @@ required_checks:
   - dotnet publish src/ViTextEditor/ViTextEditor.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=None -p:DebugSymbols=false
   - artifacts/vi_text_editor-win-x64/vi_text_editor.exe --startup-smoke-test
   - artifacts/vi_text_editor-win-x64-single-file/vi_text_editor.exe --startup-smoke-test
+  - artifacts/vi_text_editor-win-x64/vi_text_editor.exe --startup-open-smoke-test "path with spaces.txt"
+  - artifacts/vi_text_editor-win-x64-single-file/vi_text_editor.exe --startup-open-smoke-test "path with spaces.txt"

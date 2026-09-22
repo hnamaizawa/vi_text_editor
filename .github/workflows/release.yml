@@ -1,0 +1,166 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Determine release version
+        id: release_info
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [xml]$project = Get-Content "src/ViTextEditor/ViTextEditor.csproj"
+          $version = [string]$project.Project.PropertyGroup.Version
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            throw "ViTextEditor.csproj does not contain a Version value."
+          }
+
+          $tag = "v$version"
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+
+          gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            "skip=true" >> $env:GITHUB_OUTPUT
+            Write-Host "Release $tag already exists; nothing to publish."
+          }
+          else {
+            "skip=false" >> $env:GITHUB_OUTPUT
+            Write-Host "Preparing release $tag."
+          }
+
+      - name: Restore core tests
+        if: steps.release_info.outputs.skip != 'true'
+        run: dotnet restore tests/ViTextEditor.Core.Tests/ViTextEditor.Core.Tests.csproj
+
+      - name: Run core tests
+        if: steps.release_info.outputs.skip != 'true'
+        run: dotnet test tests/ViTextEditor.Core.Tests/ViTextEditor.Core.Tests.csproj --configuration Release --no-restore
+
+      - name: Restore application
+        if: steps.release_info.outputs.skip != 'true'
+        run: dotnet restore src/ViTextEditor/ViTextEditor.csproj
+
+      - name: Build application
+        if: steps.release_info.outputs.skip != 'true'
+        run: dotnet build src/ViTextEditor/ViTextEditor.csproj --configuration Release --no-restore
+
+      - name: Publish portable Windows x64 build
+        if: steps.release_info.outputs.skip != 'true'
+        run: dotnet publish src/ViTextEditor/ViTextEditor.csproj --configuration Release --runtime win-x64 --self-contained true --output artifacts/vi_text_editor-win-x64
+
+      - name: Smoke-test portable build and shell file open
+        if: steps.release_info.outputs.skip != 'true'
+        shell: pwsh
+        run: |
+          $exe = "artifacts/vi_text_editor-win-x64/vi_text_editor.exe"
+          if (-not (Test-Path $exe)) { throw "Portable executable was not created." }
+
+          $startup = Start-Process -FilePath $exe -ArgumentList "--startup-smoke-test" -PassThru -Wait
+          if ($startup.ExitCode -ne 0) { throw "Portable startup smoke test failed with exit code $($startup.ExitCode)." }
+
+          $sample = Join-Path $env:RUNNER_TEMP "vi text editor release shell open smoke.txt"
+          Set-Content -Path $sample -Value "Release shell-open smoke test" -Encoding utf8
+          $arguments = "--startup-open-smoke-test `"$sample`""
+          $shellOpen = Start-Process -FilePath $exe -ArgumentList $arguments -PassThru -Wait
+          if ($shellOpen.ExitCode -ne 0) { throw "Portable shell-open smoke test failed with exit code $($shellOpen.ExitCode)." }
+
+      - name: Publish single-file Windows x64 build
+        if: steps.release_info.outputs.skip != 'true'
+        run: >-
+          dotnet publish src/ViTextEditor/ViTextEditor.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          --output artifacts/vi_text_editor-win-x64-single-file
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          -p:DebugType=None
+          -p:DebugSymbols=false
+
+      - name: Verify and smoke-test single-file build
+        if: steps.release_info.outputs.skip != 'true'
+        shell: pwsh
+        run: |
+          $outputDir = "artifacts/vi_text_editor-win-x64-single-file"
+          $files = @(Get-ChildItem -Path $outputDir -Recurse -File)
+          if ($files.Count -ne 1 -or $files[0].Name -ne "vi_text_editor.exe" -or $files[0].Length -le 0) {
+            $names = ($files | ForEach-Object { $_.FullName }) -join "`n"
+            throw "Single-file publish must contain exactly one non-empty vi_text_editor.exe:`n$names"
+          }
+
+          $exe = $files[0].FullName
+          $startup = Start-Process -FilePath $exe -ArgumentList "--startup-smoke-test" -PassThru -Wait
+          if ($startup.ExitCode -ne 0) { throw "Single-file startup smoke test failed with exit code $($startup.ExitCode)." }
+
+          $sample = Join-Path $env:RUNNER_TEMP "vi text editor release single file shell open smoke.txt"
+          Set-Content -Path $sample -Value "Release shell-open smoke test" -Encoding utf8
+          $arguments = "--startup-open-smoke-test `"$sample`""
+          $shellOpen = Start-Process -FilePath $exe -ArgumentList $arguments -PassThru -Wait
+          if ($shellOpen.ExitCode -ne 0) { throw "Single-file shell-open smoke test failed with exit code $($shellOpen.ExitCode)." }
+
+      - name: Package versioned release assets
+        if: steps.release_info.outputs.skip != 'true'
+        shell: pwsh
+        run: |
+          $version = "${{ steps.release_info.outputs.version }}"
+          $singleFileAsset = "artifacts/vi_text_editor-v$version-win-x64.exe"
+          $portableAsset = "artifacts/vi_text_editor-v$version-win-x64.zip"
+
+          Copy-Item "artifacts/vi_text_editor-win-x64-single-file/vi_text_editor.exe" $singleFileAsset -Force
+          Compress-Archive -Path "artifacts/vi_text_editor-win-x64/*" -DestinationPath $portableAsset -Force
+
+          if (-not (Test-Path $singleFileAsset)) { throw "Single-file release asset was not created." }
+          if (-not (Test-Path $portableAsset)) { throw "Portable ZIP release asset was not created." }
+
+      - name: Create version tag
+        if: steps.release_info.outputs.skip != 'true'
+        shell: pwsh
+        run: |
+          $tag = "${{ steps.release_info.outputs.tag }}"
+          git ls-remote --exit-code --tags origin "refs/tags/$tag" *> $null
+          if ($LASTEXITCODE -ne 0) {
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag $tag $env:GITHUB_SHA
+            git push origin $tag
+          }
+          else {
+            Write-Host "Tag $tag already exists."
+          }
+
+      - name: Create GitHub Release and mark Latest
+        if: steps.release_info.outputs.skip != 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = "${{ steps.release_info.outputs.version }}"
+          $tag = "${{ steps.release_info.outputs.tag }}"
+          $singleFileAsset = "artifacts/vi_text_editor-v$version-win-x64.exe"
+          $portableAsset = "artifacts/vi_text_editor-v$version-win-x64.zip"
+
+          gh release create $tag $singleFileAsset $portableAsset `
+            --repo $env:GITHUB_REPOSITORY `
+            --title "vi_text_editor $tag" `
+            --generate-notes `
+            --latest `
+            --verify-tag

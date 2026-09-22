@@ -2,12 +2,14 @@
 
 Windows向けの軽量テキストエディターです。EmEditor／サクラエディタに近いGUIとファイル操作を持ち、基本操作はvi/Vim系キーバインドで行います。
 
-現在のアプリ版は **v0.1.23** です。
+現在のアプリ版は **v0.1.24** です。
 
 ## 主な特徴
 
 - .NET 10 + WinForms + Scintilla5.NET
 - Windows x64自己完結版に加え、別PCへEXE 1個だけコピーできるsingle-file版を配布
+- GitHub ReleasesのLatestからversion付きSingle-file EXE / Portable ZIPを誰でもダウンロード可能
+- Windowsの「既定のアプリ」「プログラムから開く」から渡されるファイルを起動時に開く
 - 通常利用時は.NETの別途インストール不要
 - NORMAL / INSERT / COMMANDを中心としたvi操作
 - 日本語IME、UTF-8 / UTF-8 BOM / Shift_JIS / UTF-16、CRLF / LF対応
@@ -27,9 +29,23 @@ Windows向けの軽量テキストエディターです。EmEditor／サクラ�
 6. 人がPull Requestを確認する
 7. 問題なければ人がAIへマージを依頼する
 8. AIがPull Requestをマージする
-9. AIがその版のWindows x64自己完結ZIPとsingle-file EXEをダウンロード可能にする
+9. versioned merge後、Release workflowが `vX.Y.Z` タグとGitHub Releaseを自動作成しLatestとして公開する
+10. AIがLatest ReleaseにSingle-file EXE / Portable ZIPが公開されたことを確認する
 
 ## 変更履歴
+
+### v0.1.24
+
+- Windows Explorer / 「プログラムから開く」/ 既定アプリから渡されるファイルパスを起動時に開くよう対応
+- スペースを含むパスに対応し、複数ファイルが渡された場合は複数タブで開く
+- 起動対象ファイルがある場合は余分な空タブを作成しない
+- `--startup-open-smoke-test` を追加し、実際のファイルパスを通常版／Single-file版EXEへ渡すCI検証を追加
+- `.github/workflows/release.yml` を追加
+- versioned PRがmainへマージされた後、`ViTextEditor.csproj` のVersionから `vX.Y.Z` タグを自動作成
+- Release前にCore tests、Windows build、通常版／Single-file版publish、実起動、Windows Shell相当のファイルオープンを再検証
+- `vi_text_editor-vX.Y.Z-win-x64.exe` と `vi_text_editor-vX.Y.Z-win-x64.zip` をGitHub Release Assetsへ自動登録
+- 新しいReleaseをLatestとして公開し、同一versionのReleaseが既に存在する場合は重複公開しない
+- 今後「マージしてください」の後はRelease workflow完了とLatest Release Assetsまで確認する運用へ変更
 
 ### v0.1.23
 
@@ -386,23 +402,42 @@ Markdownの見出しは太字・サイズ差で強調します。ハイライト
 
 ## Windowsで通常利用する方法（.NETのインストール不要）
 
-GitHub Actionsでは2種類のWindows x64自己完結版を生成します。
+一般利用者にはGitHub Releasesの **Latest** から取得する方法を推奨します。
 
-**1ファイル版（別PCへの持ち運びに推奨）**
+- Latest Release: `https://github.com/hnamaizawa/vi_text_editor/releases/latest`
+- 推奨: `vi_text_editor-vX.Y.Z-win-x64.exe` — 1ファイルだけで動作するSingle-file版
+- 代替: `vi_text_editor-vX.Y.Z-win-x64.zip` — 従来のフォルダー型自己完結版
+- どちらも別途.NET Runtime / SDKをインストールする必要はありません
 
-- Artifact: `vi_text_editor-win-x64-single-file`
-- 中身は `vi_text_editor.exe` 1ファイルだけ
-- `vi_text_editor.exe` を任意のフォルダーへコピーしてダブルクリック
-- 別途.NET Runtime / SDKをインストールする必要はありません
-- Scintilla等のネイティブライブラリはEXE内に同梱され、実行時にWindowsの一時領域へ自己展開されます
+GitHub ActionsのArtifactにも開発確認用として `vi_text_editor-win-x64-single-file` / `vi_text_editor-win-x64` を残しますが、一般配布はRelease Assetsを使用します。
 
-**従来のフォルダー版**
+### `.txt` をダブルクリックしてvi_text_editorで開く
 
-- Artifact: `vi_text_editor-win-x64`
-- ZIPを任意のフォルダーへ展開し、`vi_text_editor.exe` をダブルクリック
-- こちらも.NET Runtime / SDKは不要です
+v0.1.24以降はWindowsから渡されたファイルパスを起動時に開きます。最初にWindows側でvi_text_editorを既定アプリとして選択してください。
 
-AIへ「マージしてください」と依頼した場合は、マージ完了後にその版の自己完結ZIPに加えてsingle-file EXEも提示します。
+1. Latest ReleaseからSingle-file EXEを取得する
+2. `C:\Tools\vi_text_editor\vi_text_editor.exe` など、今後も変えない固定パス・固定ファイル名へコピーする
+3. `.txt` ファイルを右クリック → **プログラムから開く** → **別のプログラムを選択**
+4. **PCでアプリを選択する** から上記 `vi_text_editor.exe` を指定する
+5. 「常にこのアプリを使う」に相当する選択肢を有効にする
+
+以後は `.txt` のダブルクリックで対象ファイルがvi_text_editorに渡され、そのファイルを開きます。スペースを含むパスにも対応します。複数ファイルを一度に渡された場合は複数タブで開きます。
+
+Windowsの既定アプリ設定はEXEのフルパスを保持するため、更新時も `C:\Tools\vi_text_editor\vi_text_editor.exe` を新しいSingle-file EXEで**同じ場所に上書き**する方法を推奨します。
+
+## GitHub Releaseの自動公開
+
+v0.1.24以降、versioned PRが `main` へマージされるとRelease workflowが起動します。同じversionのReleaseがまだ存在しない場合、次の処理を自動で実行します。
+
+1. Core tests / Windows build
+2. Portable版 / Single-file版をpublish
+3. 両方のEXEで通常起動スモークテスト
+4. 両方のEXEへスペースを含む `.txt` パスを渡すWindows Shell相当のオープンスモークテスト
+5. プロジェクトVersionと同じ `vX.Y.Z` タグを作成
+6. version付きSingle-file EXE / Portable ZIPをRelease Assetsへ登録
+7. ReleaseをLatestとして公開
+
+同じversionのReleaseが既に存在するmain更新では、重複Releaseを作成しません。
 
 ## ソースコードから開発・起動する方法
 

@@ -10,7 +10,7 @@ internal sealed class EditorWorkspaceForm : Form
     private readonly HashSet<MainForm> _deferredClosePass = [];
     private bool _closingWorkspace;
 
-    public EditorWorkspaceForm()
+    public EditorWorkspaceForm(IEnumerable<string>? startupPaths = null)
     {
         Text = "vi_text_editor";
         Width = 1180;
@@ -23,10 +23,33 @@ internal sealed class EditorWorkspaceForm : Form
         Controls.Add(_tabs);
 
         FormClosing += WorkspaceOnFormClosing;
-        AddBlankEditorTab(select: true);
+
+        var paths = startupPaths?
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .ToArray() ?? [];
+        if (paths.Length == 0)
+        {
+            AddBlankEditorTab(select: true);
+        }
+        else
+        {
+            foreach (var path in paths) OpenPath(path, select: true);
+            if (_tabs.TabCount == 0) AddBlankEditorTab(select: true);
+        }
     }
 
     public RecentFileStore RecentFiles => _recentFiles;
+
+    internal bool IsPathOpen(string path)
+    {
+        string fullPath;
+        try { fullPath = Path.GetFullPath(path); }
+        catch { return false; }
+
+        return _sessions.Values.Any(session =>
+            !string.IsNullOrWhiteSpace(session.FilePath) &&
+            string.Equals(Path.GetFullPath(session.FilePath), fullPath, StringComparison.OrdinalIgnoreCase));
+    }
 
     public void NewTab() => AddBlankEditorTab(select: true);
 
@@ -217,14 +240,14 @@ internal sealed class EditorWorkspaceForm : Form
             ReplaceHelpItem(help, item => item.Text.Contains("バージョン情報", StringComparison.Ordinal),
                 new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show(
                     child,
-                    "vi_text_editor v0.1.20\nMarkdown COMMAND mode / reliable viewer tab navigation",
+                    "vi_text_editor v0.1.24\nGitHub Releases / Windows file association startup",
                     "バージョン情報",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information)));
             ReplaceHelpItem(help, item => item.Text.Contains("ワークスペース操作", StringComparison.Ordinal),
-                new ToolStripMenuItem("v0.1.20 ワークスペース操作", null, (_, _) => MessageBox.Show(
+                new ToolStripMenuItem("v0.1.24 ワークスペース操作", null, (_, _) => MessageBox.Show(
                     child,
-                    "Ctrl+Shift+J: JSON整形\nCtrl+Shift+M: Markdownプレビュー\nCtrl+Tab / Ctrl+Shift+Tab: タブ切替\nCtrl+PageDown / Ctrl+PageUp: タブ切替\n\nMarkdown vi: j/k, Ctrl+F/B/D/U, gg/G, / ? n/N\nMarkdown COMMAND: :set ic / :set noic / :set ic?\nCtrl+マウスホイール: デバウンスされた拡大縮小",
+                    "Ctrl+Shift+J: JSON整形\nCtrl+Shift+M: Markdownプレビュー\nCtrl+Tab / Ctrl+Shift+Tab: タブ切替\nCtrl+PageDown / Ctrl+PageUp: タブ切替\n\nMarkdown vi: j/k, Ctrl+F/B/D/U, gg/G, / ? n/N\nMarkdown COMMAND: :set ic / :set noic / :set ic?\nCtrl+マウスホイール: デバウンスされた拡大縮小\n\nWindows: 既定のアプリ／プログラムから開く経由のファイルパスを起動時に開く",
                     "ワークスペース操作",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information)));
