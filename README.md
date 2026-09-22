@@ -2,7 +2,7 @@
 
 Windows向けの軽量テキストエディターです。EmEditor／サクラエディタに近いGUIとファイル操作を持ち、基本操作はvi/Vim系キーバインドで行います。
 
-現在のアプリ版は **v0.1.22** です。
+現在のアプリ版は **v0.1.23** です。
 
 ## 主な特徴
 
@@ -30,6 +30,16 @@ Windows向けの軽量テキストエディターです。EmEditor／サクラ�
 9. AIがその版のWindows x64自己完結ZIPとsingle-file EXEをダウンロード可能にする
 
 ## 変更履歴
+
+### v0.1.23
+
+- v0.1.22のsingle-file EXEが一部環境で起動直後に終了し、GUIが表示されない問題への対策を追加
+- .NET single-fileが自己展開した `Scintilla.dll` / `Lexilla.dll` の実配置先を起動時に探索
+- Scintillaコントロール生成前に `ScintillaNativeLibrary.SatelliteDirectory` を設定
+- `NATIVE_DLL_SEARCH_DIRECTORIES` を優先し、通常のアプリ配置先と `%TEMP%\.net\...` もフォールバック探索
+- `--startup-smoke-test` を追加し、ワークスペースとScintilla初期化まで実際に行う起動検証経路を追加
+- GitHub Actionsでフォルダー版／single-file版の両方を実際に起動し、startup smoke test成功を必須化
+- Single-file EXEが存在するだけではなく、実際に起動可能であることを配布前に検証する運用へ強化
 
 ### v0.1.22
 

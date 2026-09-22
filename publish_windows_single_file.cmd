@@ -38,7 +38,14 @@ if not exist "%OUTDIR%\vi_text_editor.exe" (
   exit /b 1
 )
 
+echo [vi_text_editor] smoke-testing single-file startup...
+start "" /wait "%OUTDIR%\vi_text_editor.exe" --startup-smoke-test
+if errorlevel 1 (
+  echo [ERROR] Single-file startup smoke test failed.
+  exit /b 1
+)
+
 echo.
-echo [SUCCESS] Single-file build created:
+echo [SUCCESS] Single-file build created and startup-tested:
 echo %OUTDIR%\vi_text_editor.exe
 endlocal
