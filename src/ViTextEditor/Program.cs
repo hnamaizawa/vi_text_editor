@@ -9,51 +9,147 @@ internal static class Program
 {
     private const string StartupSmokeTestArgument = "--startup-smoke-test";
     private const string StartupOpenSmokeTestArgument = "--startup-open-smoke-test";
+    private const string SingleInstanceSmokeHostArgument = "--single-instance-smoke-host";
 
     [STAThread]
     private static int Main(string[] args)
     {
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
-        // Scintilla5.NET 7.x looks for Scintilla.dll / Lexilla.dll as real files.
-        // In a .NET single-file build those native files are self-extracted under
-        // %TEMP%\.net\... before managed Main starts. Tell Scintilla where the
-        // runtime actually placed them before the Scintilla type is first used.
-        ConfigureScintillaNativeLibraries();
-
-        ApplicationConfiguration.Initialize();
-
         var startupSmokeTest = args.Any(arg => string.Equals(arg, StartupSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
         var startupOpenSmokeTest = args.Any(arg => string.Equals(arg, StartupOpenSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
-        var startupPaths = args
-            .Where(arg => !string.Equals(arg, StartupSmokeTestArgument, StringComparison.OrdinalIgnoreCase) &&
-                          !string.Equals(arg, StartupOpenSmokeTestArgument, StringComparison.OrdinalIgnoreCase))
-            .ToArray();
+        var singleInstanceSmokeHost = Array.FindIndex(args, arg =>
+            string.Equals(arg, SingleInstanceSmokeHostArgument, StringComparison.OrdinalIgnoreCase));
 
-        if (startupOpenSmokeTest)
+        // Packaging smoke tests intentionally bypass normal single-instance routing.
+        // They need to exercise the packaged executable in isolation and terminate.
+        if (startupSmokeTest || startupOpenSmokeTest || singleInstanceSmokeHost >= 0)
         {
-            if (startupPaths.Length == 0) return 2;
+            ConfigureScintillaNativeLibraries();
+            ApplicationConfiguration.Initialize();
 
-            using var workspace = new EditorWorkspaceForm(startupPaths);
-            workspace.CreateControl();
-            return startupPaths.All(workspace.IsPathOpen) ? 0 : 3;
+            if (singleInstanceSmokeHost >= 0)
+                return RunSingleInstanceSmokeHost(args, singleInstanceSmokeHost);
+
+            var startupPaths = args
+                .Where(arg => !string.Equals(arg, StartupSmokeTestArgument, StringComparison.OrdinalIgnoreCase) &&
+                              !string.Equals(arg, StartupOpenSmokeTestArgument, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+
+            if (startupOpenSmokeTest)
+            {
+                if (startupPaths.Length == 0) return 2;
+
+                using var workspace = new EditorWorkspaceForm(startupPaths);
+                workspace.CreateControl();
+                return startupPaths.All(workspace.IsPathOpen) ? 0 : 3;
+            }
+
+            using (var workspace = new EditorWorkspaceForm())
+            {
+                workspace.CreateControl();
+                return 0;
+            }
         }
 
-        if (startupSmokeTest)
+        // Normal launches are single-instance per Windows user/session. A second
+        // Explorer/Open-with launch forwards its file arguments to the already
+        // running workspace and exits instead of creating another editor window.
+        using var singleInstance = new SingleInstanceCoordinator();
+        if (!singleInstance.IsPrimary)
         {
-            // CI/local packaging smoke test: constructing the workspace creates the
-            // embedded MainForm and Scintilla control, so native-library startup
-            // regressions fail here instead of producing a silently exiting EXE.
-            using var workspace = new EditorWorkspaceForm();
-            workspace.CreateControl();
-            return 0;
+            return singleInstance.SendPathsToPrimary(args, TimeSpan.FromSeconds(5)) ? 0 : 5;
         }
 
-        // Windows Explorer / "Open with" passes selected files as command-line
-        // arguments. Opening them here allows .txt and other associated files to be
-        // opened by double-clicking once vi_text_editor is selected as the default app.
-        Application.Run(new EditorWorkspaceForm(startupPaths));
+        ConfigureScintillaNativeLibraries();
+        ApplicationConfiguration.Initialize();
+
+        using var mainWorkspace = new EditorWorkspaceForm(args);
+        using var fileDropSupport = WorkspaceFileDropSupport.Attach(mainWorkspace);
+        mainWorkspace.Shown += (_, _) =>
+            singleInstance.StartServer(paths => DispatchExternalPaths(mainWorkspace, paths));
+        Application.Run(mainWorkspace);
         return 0;
+    }
+
+    private static int RunSingleInstanceSmokeHost(string[] args, int hostArgumentIndex)
+    {
+        if (args.Length <= hostArgumentIndex + 2) return 10;
+        var readyPath = args[hostArgumentIndex + 1];
+        var resultPath = args[hostArgumentIndex + 2];
+        var success = false;
+
+        using var singleInstance = new SingleInstanceCoordinator();
+        if (!singleInstance.IsPrimary) return 11;
+
+        using var workspace = new EditorWorkspaceForm();
+        using var timeoutTimer = new System.Windows.Forms.Timer { Interval = 15000 };
+        timeoutTimer.Tick += (_, _) =>
+        {
+            timeoutTimer.Stop();
+            if (!workspace.IsDisposed) workspace.Close();
+        };
+
+        workspace.Shown += (_, _) =>
+        {
+            singleInstance.StartServer(paths =>
+            {
+                DispatchExternalPaths(workspace, paths, () =>
+                {
+                    success = paths.Count > 0 && paths.All(workspace.IsPathOpen);
+                    if (success)
+                    {
+                        try { File.WriteAllText(resultPath, "ok", Encoding.UTF8); }
+                        catch { success = false; }
+                    }
+                    if (!workspace.IsDisposed) workspace.Close();
+                });
+            });
+
+            try { File.WriteAllText(readyPath, "ready", Encoding.UTF8); }
+            catch
+            {
+                workspace.Close();
+                return;
+            }
+            timeoutTimer.Start();
+        };
+
+        Application.Run(workspace);
+        return success ? 0 : 12;
+    }
+
+    private static void DispatchExternalPaths(
+        EditorWorkspaceForm workspace,
+        IReadOnlyList<string> paths,
+        Action? afterOpen = null)
+    {
+        if (workspace.IsDisposed || workspace.Disposing) return;
+
+        void Apply()
+        {
+            if (workspace.IsDisposed || workspace.Disposing) return;
+
+            foreach (var path in paths)
+                workspace.OpenPath(path, select: true);
+
+            if (workspace.WindowState == FormWindowState.Minimized)
+                workspace.WindowState = FormWindowState.Normal;
+            workspace.Show();
+            workspace.BringToFront();
+            workspace.Activate();
+            afterOpen?.Invoke();
+        }
+
+        try
+        {
+            if (workspace.InvokeRequired) workspace.BeginInvoke((Action)Apply);
+            else Apply();
+        }
+        catch (InvalidOperationException)
+        {
+            // The workspace can be closing while the pipe receives a late request.
+        }
     }
 
     private static void ConfigureScintillaNativeLibraries()
