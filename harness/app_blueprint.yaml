@@ -1,6 +1,6 @@
 project:
   name: vi_text_editor
-  version: 0.1.24
+  version: 0.1.25
   platform: windows
   ui: winforms
   editor_component: Scintilla5.NET
@@ -88,6 +88,12 @@ non_negotiable_invariants:
   - windows_shell_file_arguments_must_open_existing_files_at_startup
   - windows_shell_file_arguments_with_spaces_must_be_supported
   - multiple_startup_file_arguments_must_open_as_multiple_tabs
+  - normal_application_launch_must_be_single_instance_per_windows_user_and_session
+  - secondary_launch_must_forward_file_arguments_to_the_existing_workspace_and_exit
+  - forwarded_files_must_open_through_the_existing_workspace_OpenPath_tab_flow
+  - forwarding_an_already_open_file_must_select_the_existing_tab_instead_of_duplicating_it
+  - file_drag_and_drop_onto_the_running_workspace_must_open_existing_files_as_tabs
+  - file_drag_and_drop_must_reuse_the_same_OpenPath_flow_as_other_workspace_file_open_actions
   - recent_files_must_persist_under_user_appdata_and_deduplicate_paths
   - files_at_or_above_64_mib_must_open_in_large_file_mode_automatically
   - large_file_mode_must_not_read_the_entire_file_into_a_string_or_byte_array
@@ -151,11 +157,12 @@ non_negotiable_invariants:
   - single_file_startup_must_configure_scintilla_native_directory_before_first_scintilla_use
   - portable_and_single_file_distributions_must_pass_real_startup_smoke_tests
   - portable_and_single_file_distributions_must_pass_windows_shell_open_smoke_tests
+  - portable_and_single_file_distributions_must_pass_single_instance_forwarding_smoke_tests
   - github_release_tag_must_match_project_version
   - successful_versioned_main_merge_must_publish_a_github_release
   - github_release_must_be_marked_latest
   - github_release_must_include_versioned_single_file_exe_and_portable_zip_assets
-  - pull_requests_must_pass_core_tests_windows_build_portable_publish_single_file_publish_startup_and_shell_open_smoke_tests
+  - pull_requests_must_pass_core_tests_windows_build_portable_publish_single_file_publish_startup_shell_open_and_single_instance_forwarding_smoke_tests
 
 required_checks:
   - dotnet test tests/ViTextEditor.Core.Tests/ViTextEditor.Core.Tests.csproj --configuration Release
@@ -166,3 +173,5 @@ required_checks:
   - artifacts/vi_text_editor-win-x64-single-file/vi_text_editor.exe --startup-smoke-test
   - artifacts/vi_text_editor-win-x64/vi_text_editor.exe --startup-open-smoke-test "path with spaces.txt"
   - artifacts/vi_text_editor-win-x64-single-file/vi_text_editor.exe --startup-open-smoke-test "path with spaces.txt"
+  - portable primary process plus secondary file launch must pass single-instance forwarding smoke test
+  - single-file primary process plus secondary file launch must pass single-instance forwarding smoke test
