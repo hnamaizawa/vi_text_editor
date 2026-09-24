@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using ScintillaNET;
 using ViTextEditor.Core.Editor;
@@ -8,6 +9,7 @@ namespace ViTextEditor;
 public sealed class MainForm : Form
 {
     private const int SciSetLayoutCache = 2272;
+    private const int SciPositionFromPointClose = 2023;
     private const int ScCachePage = 2;
     private const int MaxCommandHistory = 200;
 
@@ -50,6 +52,7 @@ public sealed class MainForm : Form
     private int _historyIndex;
     private string _historyPrefix = string.Empty;
     private string? _commandFeedback;
+    private Point? _urlClickStart;
 
     public MainForm()
     {
@@ -68,7 +71,10 @@ public sealed class MainForm : Form
         _editor.KeyDown += EditorOnKeyDown;
         _editor.KeyPress += EditorOnKeyPress;
         _editor.UpdateUI += (_, _) => UpdateStatus();
-        _editor.MouseUp += (_, _) => UpdateStatus();
+        _editor.MouseDown += EditorOnMouseDown;
+        _editor.MouseUp += EditorOnMouseUp;
+        _editor.MouseMove += EditorOnMouseMove;
+        _editor.MouseLeave += (_, _) => _editor.Cursor = Cursors.IBeam;
         _editor.Insert += EditorOnInsert;
         _editor.Delete += EditorOnDelete;
         _editor.SavePointLeft += EditorOnSavePointLeft;
@@ -105,6 +111,64 @@ public sealed class MainForm : Form
         ResetUndoBaseline();
         UpdateTitle();
         UpdateStatus();
+    }
+
+    private void EditorOnMouseDown(object? sender, MouseEventArgs e)
+    {
+        _urlClickStart = e.Button == MouseButtons.Left ? e.Location : null;
+    }
+
+    private void EditorOnMouseUp(object? sender, MouseEventArgs e)
+    {
+        UpdateStatus();
+        var start = _urlClickStart;
+        _urlClickStart = null;
+        if (e.Button != MouseButtons.Left || start is null) return;
+
+        var dragSize = SystemInformation.DragSize;
+        if (Math.Abs(e.X - start.Value.X) > dragSize.Width / 2 ||
+            Math.Abs(e.Y - start.Value.Y) > dragSize.Height / 2)
+        {
+            return;
+        }
+
+        var url = GetUrlAtPoint(e.Location);
+        if (url is null) return;
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            MessageBox.Show(this, $"URLをブラウザで開けませんでした。\n{url}\n\n{ex.Message}", "vi_text_editor", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private void EditorOnMouseMove(object? sender, MouseEventArgs e)
+    {
+        _editor.Cursor = GetUrlAtPoint(e.Location) is null ? Cursors.IBeam : Cursors.Hand;
+    }
+
+    private string? GetUrlAtPoint(Point point)
+    {
+        var position = _editor.DirectMessage(
+            SciPositionFromPointClose,
+            new IntPtr(point.X),
+            new IntPtr(point.Y)).ToInt32();
+        if (position < 0) return null;
+
+        var lineNumber = _editor.LineFromPosition(position);
+        if (lineNumber < 0 || lineNumber >= _editor.Lines.Count) return null;
+        var line = _editor.Lines[lineNumber];
+        var lineOffset = position - line.Position;
+        if (lineOffset < 0) return null;
+
+        // Scintilla positions are UTF-8 byte offsets. GetTextRange decodes the prefix,
+        // giving UrlDetectionService the correct UTF-16 character index even when
+        // Japanese text appears before the URL.
+        var characterIndex = _editor.GetTextRange(line.Position, lineOffset).Length;
+        return UrlDetectionService.FindAt(line.Text, characterIndex)?.Value;
     }
 
     private void ConfigureEditorAppearance()
