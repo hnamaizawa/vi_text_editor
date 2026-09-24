@@ -518,7 +518,7 @@ public sealed class MainForm : Form
         _editor.DirectMessage(SciIndicatorClearRange, new IntPtr(start), new IntPtr(length));
     }
 
-    internal int RunUrlIndicatorSmokeTest()
+    internal int RunUrlIndicatorSmokeTest(out string diagnostic)
     {
         const string firstUrl = "https://example.com/a/b";
         const string secondUrl = "https://uipath.com/path?q=test";
@@ -547,13 +547,16 @@ public sealed class MainForm : Form
                 new IntPtr(nativePosition)).ToInt32() != 0;
             if (textStyled != expected[nativePosition])
             {
+                diagnostic = $"Text indicator mismatch at native position {nativePosition}: expected={expected[nativePosition]}, actual={textStyled}.";
                 return (expected[nativePosition] ? 2000 : 1000) + nativePosition;
             }
             if (underlined != expected[nativePosition])
             {
+                diagnostic = $"Underline indicator mismatch at native position {nativePosition}: expected={expected[nativePosition]}, actual={underlined}.";
                 return (expected[nativePosition] ? 4000 : 3000) + nativePosition;
             }
         }
+        diagnostic = "PASS";
         return 0;
     }
 

@@ -48,10 +48,19 @@ jobs:
       - name: Smoke-test URL indicator byte ranges
         shell: pwsh
         run: |
-          $process = Start-Process -FilePath "artifacts/vi_text_editor-win-x64/vi_text_editor.exe" -ArgumentList "--url-indicator-smoke-test" -PassThru -Wait
+          $diagnostic = Join-Path $env:RUNNER_TEMP "url-indicator-smoke-result.txt"
+          $arguments = "--url-indicator-smoke-test `"$diagnostic`""
+          $process = Start-Process -FilePath "artifacts/vi_text_editor-win-x64/vi_text_editor.exe" -ArgumentList $arguments -PassThru -Wait
           if ($process.ExitCode -ne 0) {
             throw "URL indicator range smoke test failed with exit code $($process.ExitCode)."
           }
+      - name: Upload URL indicator smoke diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: url-indicator-smoke-diagnostic
+          path: ${{ runner.temp }}/url-indicator-smoke-result.txt
+          if-no-files-found: error
       - name: Smoke-test portable Windows shell file open
         shell: pwsh
         run: |

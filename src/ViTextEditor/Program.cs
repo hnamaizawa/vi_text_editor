@@ -72,7 +72,14 @@ internal static class Program
         {
             using var smokeForm = new MainForm();
             smokeForm.CreateControl();
-            return smokeForm.RunUrlIndicatorSmokeTest();
+            var result = smokeForm.RunUrlIndicatorSmokeTest(out var diagnostic);
+            var argumentIndex = Array.FindIndex(args, arg =>
+                string.Equals(arg, UrlIndicatorSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
+            if (argumentIndex >= 0 && argumentIndex + 1 < args.Length)
+            {
+                File.WriteAllText(args[argumentIndex + 1], diagnostic);
+            }
+            return result;
         }
 
         using var broker = SingleInstanceFileBroker.Acquire();
