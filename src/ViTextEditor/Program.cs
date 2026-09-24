@@ -72,7 +72,7 @@ internal static class Program
         {
             using var smokeForm = new MainForm();
             smokeForm.CreateControl();
-            return smokeForm.RunUrlIndicatorSmokeTest() ? 0 : 6;
+            return smokeForm.RunUrlIndicatorSmokeTest();
         }
 
         using var broker = SingleInstanceFileBroker.Acquire();

@@ -518,7 +518,7 @@ public sealed class MainForm : Form
         _editor.DirectMessage(SciIndicatorClearRange, new IntPtr(start), new IntPtr(length));
     }
 
-    internal bool RunUrlIndicatorSmokeTest()
+    internal int RunUrlIndicatorSmokeTest()
     {
         const string firstUrl = "https://example.com/a/b";
         const string secondUrl = "https://uipath.com/path?q=test";
@@ -545,9 +545,16 @@ public sealed class MainForm : Form
                 SciIndicatorValueAt,
                 new IntPtr(UrlUnderlineIndicator),
                 new IntPtr(nativePosition)).ToInt32() != 0;
-            if (textStyled != expected[nativePosition] || underlined != expected[nativePosition]) return false;
+            if (textStyled != expected[nativePosition])
+            {
+                return (expected[nativePosition] ? 2000 : 1000) + nativePosition;
+            }
+            if (underlined != expected[nativePosition])
+            {
+                return (expected[nativePosition] ? 4000 : 3000) + nativePosition;
+            }
         }
-        return true;
+        return 0;
     }
 
     private void EditorOnKeyDown(object? sender, KeyEventArgs e)
