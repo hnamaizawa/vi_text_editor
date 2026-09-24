@@ -15,7 +15,8 @@ public static partial class UrlDetectionService
             var value = TrimTrailingPunctuation(match.Value);
             if (value.Length == 0 || characterIndex < match.Index || characterIndex >= match.Index + value.Length) continue;
             if (!Uri.TryCreate(value, UriKind.Absolute, out var uri)) continue;
-            if (uri.Scheme is not (Uri.UriSchemeHttp or Uri.UriSchemeHttps)) continue;
+            if (!string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) continue;
             return new UrlMatch(value, match.Index, value.Length);
         }
 
