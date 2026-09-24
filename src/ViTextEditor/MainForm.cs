@@ -19,7 +19,7 @@ public sealed class MainForm : Form
     private const int SciIndicSetStyle = 2080;
     private const int SciIndicSetFore = 2082;
     private const int SciSetIndicatorCurrent = 2500;
-    private const int SciIndicatorValueAt = 2503;
+    private const int SciIndicatorValueAt = 2507;
     private const int SciIndicatorFillRange = 2504;
     private const int SciIndicatorClearRange = 2505;
     private const int IndicPlain = 0;
