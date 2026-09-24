@@ -1,6 +1,6 @@
 project:
   name: vi_text_editor
-  version: 0.1.25
+  version: 0.1.26
   platform: windows
   ui: winforms
   editor_component: Scintilla5.NET
@@ -106,6 +106,13 @@ non_negotiable_invariants:
   - syntax_highlighting_must_follow_the_current_file_extension
   - markdown_headings_must_be_visually_emphasized
   - syntax_highlighting_must_not_modify_document_text
+  - single_click_on_http_or_https_url_must_open_the_windows_default_browser
+  - url_click_detection_must_support_japanese_text_before_the_url
+  - url_click_detection_must_exclude_surrounding_sentence_punctuation
+  - url_click_detection_must_preserve_balanced_parentheses_inside_urls
+  - mouse_drag_selection_must_not_open_urls
+  - clicking_outside_a_url_must_preserve_normal_caret_behavior
+  - url_detection_must_remain_core_unit_testable_without_starting_a_browser
   - json_formatting_must_accept_valid_single_line_json
   - json_formatting_may_normalize_bom_unicode_whitespace_and_separated_numeric_signs
   - json_formatting_normalization_must_not_change_quoted_string_contents
