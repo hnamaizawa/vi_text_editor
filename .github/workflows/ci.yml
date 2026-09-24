@@ -45,6 +45,13 @@ jobs:
           if ($process.ExitCode -ne 0) {
             throw "Portable startup smoke test failed with exit code $($process.ExitCode)."
           }
+      - name: Smoke-test URL indicator byte ranges
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath "artifacts/vi_text_editor-win-x64/vi_text_editor.exe" -ArgumentList "--url-indicator-smoke-test" -PassThru -Wait
+          if ($process.ExitCode -ne 0) {
+            throw "URL indicator range smoke test failed with exit code $($process.ExitCode)."
+          }
       - name: Smoke-test portable Windows shell file open
         shell: pwsh
         run: |
