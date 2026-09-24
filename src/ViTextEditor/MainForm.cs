@@ -10,6 +10,8 @@ public sealed class MainForm : Form
 {
     private const int SciSetLayoutCache = 2272;
     private const int SciPositionFromPointClose = 2023;
+    private const int SciGetLength = 2006;
+    private const int SciPositionRelativeCodeUnits = 2716;
     private const int SciIndicSetStyle = 2080;
     private const int SciIndicSetFore = 2082;
     private const int SciSetIndicatorCurrent = 2500;
@@ -454,8 +456,9 @@ public sealed class MainForm : Form
 
     private void RefreshAllUrlIndicators()
     {
-        ClearUrlIndicator(UrlTextIndicator, 0, _editor.TextLength);
-        ClearUrlIndicator(UrlUnderlineIndicator, 0, _editor.TextLength);
+        var documentByteLength = _editor.DirectMessage(SciGetLength).ToInt32();
+        ClearUrlIndicator(UrlTextIndicator, 0, documentByteLength);
+        ClearUrlIndicator(UrlUnderlineIndicator, 0, documentByteLength);
         for (var lineNumber = 0; lineNumber < _editor.Lines.Count; lineNumber++)
         {
             FillUrlIndicatorsForLine(lineNumber);
@@ -478,12 +481,23 @@ public sealed class MainForm : Form
         var lineText = line.Text;
         foreach (var match in UrlDetectionService.FindAll(lineText))
         {
-            var byteStart = line.Position + Encoding.UTF8.GetByteCount(lineText.AsSpan(0, match.Start));
-            var byteLength = Encoding.UTF8.GetByteCount(lineText.AsSpan(match.Start, match.Length));
+            // UrlDetectionService returns .NET UTF-16 indexes. Ask Scintilla to
+            // convert those code-unit offsets into its native document positions
+            // so Japanese text, surrogate pairs and lexer state cannot shift the
+            // displayed underline away from the URL.
+            var byteStart = PositionFromUtf16Offset(line.Position, match.Start);
+            var byteEnd = PositionFromUtf16Offset(byteStart, match.Length);
+            var byteLength = byteEnd - byteStart;
             FillUrlIndicator(UrlTextIndicator, byteStart, byteLength);
             FillUrlIndicator(UrlUnderlineIndicator, byteStart, byteLength);
         }
     }
+
+    private int PositionFromUtf16Offset(int startPosition, int utf16Offset) =>
+        _editor.DirectMessage(
+            SciPositionRelativeCodeUnits,
+            new IntPtr(startPosition),
+            new IntPtr(utf16Offset)).ToInt32();
 
     private void FillUrlIndicator(int indicator, int start, int length)
     {
