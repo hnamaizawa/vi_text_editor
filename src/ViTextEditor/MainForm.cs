@@ -10,6 +10,15 @@ public sealed class MainForm : Form
 {
     private const int SciSetLayoutCache = 2272;
     private const int SciPositionFromPointClose = 2023;
+    private const int SciIndicSetStyle = 2080;
+    private const int SciIndicSetFore = 2082;
+    private const int SciSetIndicatorCurrent = 2500;
+    private const int SciIndicatorFillRange = 2504;
+    private const int SciIndicatorClearRange = 2505;
+    private const int IndicPlain = 0;
+    private const int IndicTextFore = 17;
+    private const int UrlTextIndicator = 30;
+    private const int UrlUnderlineIndicator = 31;
     private const int ScCachePage = 2;
     private const int MaxCommandHistory = 200;
 
@@ -53,6 +62,8 @@ public sealed class MainForm : Form
     private string _historyPrefix = string.Empty;
     private string? _commandFeedback;
     private Point? _urlClickStart;
+    private int? _pendingUrlRefreshPosition;
+    private bool _urlRefreshScheduled;
 
     public MainForm()
     {
@@ -181,6 +192,16 @@ public sealed class MainForm : Form
 
         _editor.BufferedDraw = false;
         _editor.DirectMessage(SciSetLayoutCache, new IntPtr(ScCachePage));
+        ConfigureUrlIndicators();
+    }
+
+    private void ConfigureUrlIndicators()
+    {
+        var linkBlue = ColorTranslator.ToWin32(Color.FromArgb(0, 102, 204));
+        _editor.DirectMessage(SciIndicSetStyle, new IntPtr(UrlTextIndicator), new IntPtr(IndicTextFore));
+        _editor.DirectMessage(SciIndicSetFore, new IntPtr(UrlTextIndicator), new IntPtr(linkBlue));
+        _editor.DirectMessage(SciIndicSetStyle, new IntPtr(UrlUnderlineIndicator), new IntPtr(IndicPlain));
+        _editor.DirectMessage(SciIndicSetFore, new IntPtr(UrlUnderlineIndicator), new IntPtr(linkBlue));
     }
 
     private void ConfigureCommandLine()
@@ -391,6 +412,7 @@ public sealed class MainForm : Form
 
     private void EditorOnInsert(object? sender, ModificationEventArgs e)
     {
+        ScheduleUrlIndicatorRefresh(e.Position);
         if (_capturingInsertRepeat && !_vi.IsRepeating && !_loading && !string.IsNullOrEmpty(e.Text))
         {
             _insertRepeatEdits.Add(ViRepeatEdit.Insert(e.Position - _insertRepeatAnchor, e.Text));
@@ -399,10 +421,80 @@ public sealed class MainForm : Form
 
     private void EditorOnDelete(object? sender, ModificationEventArgs e)
     {
+        ScheduleUrlIndicatorRefresh(e.Position);
         if (_capturingInsertRepeat && !_vi.IsRepeating && !_loading && !string.IsNullOrEmpty(e.Text))
         {
             _insertRepeatEdits.Add(ViRepeatEdit.Delete(e.Position - _insertRepeatAnchor, e.Text));
         }
+    }
+
+    private void ScheduleUrlIndicatorRefresh(int position)
+    {
+        if (_loading) return;
+        _pendingUrlRefreshPosition = position;
+        if (_urlRefreshScheduled) return;
+
+        _urlRefreshScheduled = true;
+        BeginInvoke(new Action(() =>
+        {
+            _urlRefreshScheduled = false;
+            if (_pendingUrlRefreshPosition is not int pendingPosition || IsDisposed) return;
+            _pendingUrlRefreshPosition = null;
+
+            var positionInDocument = Math.Clamp(pendingPosition, 0, _editor.TextLength);
+            var changedLine = _editor.LineFromPosition(positionInDocument);
+            for (var lineNumber = Math.Max(0, changedLine - 1);
+                 lineNumber <= Math.Min(_editor.Lines.Count - 1, changedLine + 1);
+                 lineNumber++)
+            {
+                RefreshUrlIndicatorsForLine(lineNumber);
+            }
+        }));
+    }
+
+    private void RefreshAllUrlIndicators()
+    {
+        ClearUrlIndicator(UrlTextIndicator, 0, _editor.TextLength);
+        ClearUrlIndicator(UrlUnderlineIndicator, 0, _editor.TextLength);
+        for (var lineNumber = 0; lineNumber < _editor.Lines.Count; lineNumber++)
+        {
+            FillUrlIndicatorsForLine(lineNumber);
+        }
+    }
+
+    private void RefreshUrlIndicatorsForLine(int lineNumber)
+    {
+        if (lineNumber < 0 || lineNumber >= _editor.Lines.Count) return;
+        var line = _editor.Lines[lineNumber];
+        var byteLength = line.EndPosition - line.Position;
+        ClearUrlIndicator(UrlTextIndicator, line.Position, byteLength);
+        ClearUrlIndicator(UrlUnderlineIndicator, line.Position, byteLength);
+        FillUrlIndicatorsForLine(lineNumber);
+    }
+
+    private void FillUrlIndicatorsForLine(int lineNumber)
+    {
+        var line = _editor.Lines[lineNumber];
+        var lineText = line.Text;
+        foreach (var match in UrlDetectionService.FindAll(lineText))
+        {
+            var byteStart = line.Position + Encoding.UTF8.GetByteCount(lineText.AsSpan(0, match.Start));
+            var byteLength = Encoding.UTF8.GetByteCount(lineText.AsSpan(match.Start, match.Length));
+            FillUrlIndicator(UrlTextIndicator, byteStart, byteLength);
+            FillUrlIndicator(UrlUnderlineIndicator, byteStart, byteLength);
+        }
+    }
+
+    private void FillUrlIndicator(int indicator, int start, int length)
+    {
+        _editor.DirectMessage(SciSetIndicatorCurrent, new IntPtr(indicator));
+        _editor.DirectMessage(SciIndicatorFillRange, new IntPtr(start), new IntPtr(length));
+    }
+
+    private void ClearUrlIndicator(int indicator, int start, int length)
+    {
+        _editor.DirectMessage(SciSetIndicatorCurrent, new IntPtr(indicator));
+        _editor.DirectMessage(SciIndicatorClearRange, new IntPtr(start), new IntPtr(length));
     }
 
     private void EditorOnKeyDown(object? sender, KeyEventArgs e)
@@ -924,6 +1016,7 @@ public sealed class MainForm : Form
             _editor.ReadOnly = false;
             _editor.Text = text;
             _editor.GotoPosition(0);
+            RefreshAllUrlIndicators();
             ResetUndoBaseline();
             _insertRepeatEdits.Clear();
             _capturingInsertRepeat = false;
