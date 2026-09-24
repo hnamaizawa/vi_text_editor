@@ -1,6 +1,6 @@
 project:
   name: vi_text_editor
-  version: 0.1.27
+  version: 0.1.28
   platform: windows
   ui: winforms
   editor_component: Scintilla5.NET
@@ -119,6 +119,9 @@ non_negotiable_invariants:
   - url_link_decoration_must_coexist_with_extension_based_syntax_highlighting
   - url_link_decoration_updates_must_not_scan_the_entire_document_per_keypress
   - dynamically_decorated_urls_must_retain_single_click_browser_opening
+  - url_link_decoration_must_begin_exactly_at_http_or_https_scheme
+  - markdown_list_prefixes_labels_and_closing_delimiters_must_not_be_decorated_as_url
+  - url_decoration_positions_must_use_scintilla_utf16_code_unit_conversion
   - json_formatting_must_accept_valid_single_line_json
   - json_formatting_may_normalize_bom_unicode_whitespace_and_separated_numeric_signs
   - json_formatting_normalization_must_not_change_quoted_string_contents

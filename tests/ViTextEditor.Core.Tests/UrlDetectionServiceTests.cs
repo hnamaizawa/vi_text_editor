@@ -17,6 +17,20 @@ public sealed class UrlDetectionServiceTests
         Assert.Equal(new UrlDetectionService.UrlMatch("http://example.jp/path", 25, 22), results[1]);
     }
 
+    [Fact]
+    public void FindAll_UsesExactUrlRangesInsideMarkdownListsAndLinks()
+    {
+        const string text = "1. [test](https://test.com)\n- https://xxx.xxx.xxx/aaa/bbb\n[https://label.example](https://target.example/path)";
+
+        var results = UrlDetectionService.FindAll(text);
+
+        Assert.Collection(results,
+            match => Assert.Equal(new UrlDetectionService.UrlMatch("https://test.com", 10, 16), match),
+            match => Assert.Equal(new UrlDetectionService.UrlMatch("https://xxx.xxx.xxx/aaa/bbb", 30, 27), match),
+            match => Assert.Equal(new UrlDetectionService.UrlMatch("https://label.example", 59, 21), match),
+            match => Assert.Equal(new UrlDetectionService.UrlMatch("https://target.example/path", 82, 27), match));
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("ftp://example.com/file")]

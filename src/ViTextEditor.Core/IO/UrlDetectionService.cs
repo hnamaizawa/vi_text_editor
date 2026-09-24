@@ -72,6 +72,9 @@ public static partial class UrlDetectionService
         return value;
     }
 
-    [GeneratedRegex("https?://[^\\s<>\\\"']+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    // Raw square brackets delimit Markdown link labels. A literal square bracket
+    // inside a URL must be percent-encoded, so stopping here also prevents one
+    // Markdown link from being treated as a single oversized URL.
+    [GeneratedRegex("https?://[^\\s<>\\\"'\\[\\]]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex HttpUrlRegex();
 }
