@@ -9,6 +9,7 @@ internal static class Program
 {
     private const string StartupSmokeTestArgument = "--startup-smoke-test";
     private const string StartupOpenSmokeTestArgument = "--startup-open-smoke-test";
+    private const string UrlIndicatorSmokeTestArgument = "--url-indicator-smoke-test";
     private const string SingleInstanceReceiveSmokeTestArgument = "--single-instance-receive-smoke-test";
 
     [STAThread]
@@ -26,6 +27,7 @@ internal static class Program
 
         var startupSmokeTest = args.Any(arg => string.Equals(arg, StartupSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
         var startupOpenSmokeTest = args.Any(arg => string.Equals(arg, StartupOpenSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
+        var urlIndicatorSmokeTest = args.Any(arg => string.Equals(arg, UrlIndicatorSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
         var singleInstanceSmokeIndex = Array.FindIndex(args, arg =>
             string.Equals(arg, SingleInstanceReceiveSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
         var singleInstanceSmokeTest = singleInstanceSmokeIndex >= 0;
@@ -37,7 +39,8 @@ internal static class Program
             : null;
         var startupPaths = args
             .Where(arg => !string.Equals(arg, StartupSmokeTestArgument, StringComparison.OrdinalIgnoreCase) &&
-                          !string.Equals(arg, StartupOpenSmokeTestArgument, StringComparison.OrdinalIgnoreCase))
+                          !string.Equals(arg, StartupOpenSmokeTestArgument, StringComparison.OrdinalIgnoreCase) &&
+                          !string.Equals(arg, UrlIndicatorSmokeTestArgument, StringComparison.OrdinalIgnoreCase))
             .ToArray();
 
         if (singleInstanceSmokeTest)
@@ -63,6 +66,20 @@ internal static class Program
             using var smokeWorkspace = new EditorWorkspaceForm();
             smokeWorkspace.CreateControl();
             return 0;
+        }
+
+        if (urlIndicatorSmokeTest)
+        {
+            using var smokeForm = new MainForm();
+            smokeForm.CreateControl();
+            var result = smokeForm.RunUrlIndicatorSmokeTest(out var diagnostic);
+            var argumentIndex = Array.FindIndex(args, arg =>
+                string.Equals(arg, UrlIndicatorSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
+            if (argumentIndex >= 0 && argumentIndex + 1 < args.Length)
+            {
+                File.WriteAllText(args[argumentIndex + 1], diagnostic);
+            }
+            return result;
         }
 
         using var broker = SingleInstanceFileBroker.Acquire();

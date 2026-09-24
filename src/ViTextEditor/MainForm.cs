@@ -11,10 +11,15 @@ public sealed class MainForm : Form
     private const int SciSetLayoutCache = 2272;
     private const int SciPositionFromPointClose = 2023;
     private const int SciGetLength = 2006;
+    private const int SciLineFromPosition = 2166;
+    private const int SciPositionFromLine = 2167;
+    private const int SciLineLength = 2350;
+    private const int SciCountCodeUnits = 2715;
     private const int SciPositionRelativeCodeUnits = 2716;
     private const int SciIndicSetStyle = 2080;
     private const int SciIndicSetFore = 2082;
     private const int SciSetIndicatorCurrent = 2500;
+    private const int SciIndicatorValueAt = 2507;
     private const int SciIndicatorFillRange = 2504;
     private const int SciIndicatorClearRange = 2505;
     private const int IndicPlain = 0;
@@ -171,16 +176,14 @@ public sealed class MainForm : Form
             new IntPtr(point.Y)).ToInt32();
         if (position < 0) return null;
 
-        var lineNumber = _editor.LineFromPosition(position);
+        var lineNumber = _editor.DirectMessage(SciLineFromPosition, new IntPtr(position)).ToInt32();
         if (lineNumber < 0 || lineNumber >= _editor.Lines.Count) return null;
         var line = _editor.Lines[lineNumber];
-        var lineOffset = position - line.Position;
-        if (lineOffset < 0) return null;
-
-        // Scintilla positions are UTF-8 byte offsets. GetTextRange decodes the prefix,
-        // giving UrlDetectionService the correct UTF-16 character index even when
-        // Japanese text appears before the URL.
-        var characterIndex = _editor.GetTextRange(line.Position, lineOffset).Length;
+        var nativeLineStart = NativePositionFromLine(lineNumber);
+        var characterIndex = _editor.DirectMessage(
+            SciCountCodeUnits,
+            new IntPtr(nativeLineStart),
+            new IntPtr(position)).ToInt32();
         return UrlDetectionService.FindAt(line.Text, characterIndex)?.Value;
     }
 
@@ -468,10 +471,10 @@ public sealed class MainForm : Form
     private void RefreshUrlIndicatorsForLine(int lineNumber)
     {
         if (lineNumber < 0 || lineNumber >= _editor.Lines.Count) return;
-        var line = _editor.Lines[lineNumber];
-        var byteLength = line.EndPosition - line.Position;
-        ClearUrlIndicator(UrlTextIndicator, line.Position, byteLength);
-        ClearUrlIndicator(UrlUnderlineIndicator, line.Position, byteLength);
+        var nativeLineStart = NativePositionFromLine(lineNumber);
+        var nativeLineLength = _editor.DirectMessage(SciLineLength, new IntPtr(lineNumber)).ToInt32();
+        ClearUrlIndicator(UrlTextIndicator, nativeLineStart, nativeLineLength);
+        ClearUrlIndicator(UrlUnderlineIndicator, nativeLineStart, nativeLineLength);
         FillUrlIndicatorsForLine(lineNumber);
     }
 
@@ -479,19 +482,23 @@ public sealed class MainForm : Form
     {
         var line = _editor.Lines[lineNumber];
         var lineText = line.Text;
+        var nativeLineStart = NativePositionFromLine(lineNumber);
         foreach (var match in UrlDetectionService.FindAll(lineText))
         {
             // UrlDetectionService returns .NET UTF-16 indexes. Ask Scintilla to
             // convert those code-unit offsets into its native document positions
             // so Japanese text, surrogate pairs and lexer state cannot shift the
             // displayed underline away from the URL.
-            var byteStart = PositionFromUtf16Offset(line.Position, match.Start);
-            var byteEnd = PositionFromUtf16Offset(byteStart, match.Length);
-            var byteLength = byteEnd - byteStart;
-            FillUrlIndicator(UrlTextIndicator, byteStart, byteLength);
-            FillUrlIndicator(UrlUnderlineIndicator, byteStart, byteLength);
+            var nativeStart = PositionFromUtf16Offset(nativeLineStart, match.Start);
+            var nativeEnd = PositionFromUtf16Offset(nativeStart, match.Length);
+            var nativeLength = nativeEnd - nativeStart;
+            FillUrlIndicator(UrlTextIndicator, nativeStart, nativeLength);
+            FillUrlIndicator(UrlUnderlineIndicator, nativeStart, nativeLength);
         }
     }
+
+    private int NativePositionFromLine(int lineNumber) =>
+        _editor.DirectMessage(SciPositionFromLine, new IntPtr(lineNumber)).ToInt32();
 
     private int PositionFromUtf16Offset(int startPosition, int utf16Offset) =>
         _editor.DirectMessage(
@@ -509,6 +516,48 @@ public sealed class MainForm : Form
     {
         _editor.DirectMessage(SciSetIndicatorCurrent, new IntPtr(indicator));
         _editor.DirectMessage(SciIndicatorClearRange, new IntPtr(start), new IntPtr(length));
+    }
+
+    internal int RunUrlIndicatorSmokeTest(out string diagnostic)
+    {
+        const string firstUrl = "https://example.com/a/b";
+        const string secondUrl = "https://uipath.com/path?q=test";
+        var sample = $"日本語の見出し\r\n- [表示名]({firstUrl})\r\n次の行\r\n  - {secondUrl}\r\n末尾";
+        LoadTextIntoEditor(sample);
+
+        var documentByteLength = _editor.DirectMessage(SciGetLength).ToInt32();
+        var expected = new bool[documentByteLength];
+        foreach (var url in new[] { firstUrl, secondUrl })
+        {
+            var characterStart = sample.IndexOf(url, StringComparison.Ordinal);
+            var nativeStart = Encoding.UTF8.GetByteCount(sample.AsSpan(0, characterStart));
+            var nativeLength = Encoding.UTF8.GetByteCount(url);
+            Array.Fill(expected, true, nativeStart, nativeLength);
+        }
+
+        for (var nativePosition = 0; nativePosition < documentByteLength; nativePosition++)
+        {
+            var textStyled = _editor.DirectMessage(
+                SciIndicatorValueAt,
+                new IntPtr(UrlTextIndicator),
+                new IntPtr(nativePosition)).ToInt32() != 0;
+            var underlined = _editor.DirectMessage(
+                SciIndicatorValueAt,
+                new IntPtr(UrlUnderlineIndicator),
+                new IntPtr(nativePosition)).ToInt32() != 0;
+            if (textStyled != expected[nativePosition])
+            {
+                diagnostic = $"Text indicator mismatch at native position {nativePosition}: expected={expected[nativePosition]}, actual={textStyled}.";
+                return (expected[nativePosition] ? 2000 : 1000) + nativePosition;
+            }
+            if (underlined != expected[nativePosition])
+            {
+                diagnostic = $"Underline indicator mismatch at native position {nativePosition}: expected={expected[nativePosition]}, actual={underlined}.";
+                return (expected[nativePosition] ? 4000 : 3000) + nativePosition;
+            }
+        }
+        diagnostic = "PASS";
+        return 0;
     }
 
     private void EditorOnKeyDown(object? sender, KeyEventArgs e)
