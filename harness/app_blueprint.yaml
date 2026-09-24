@@ -1,6 +1,6 @@
 project:
   name: vi_text_editor
-  version: 0.1.26
+  version: 0.1.27
   platform: windows
   ui: winforms
   editor_component: Scintilla5.NET
@@ -113,6 +113,12 @@ non_negotiable_invariants:
   - mouse_drag_selection_must_not_open_urls
   - clicking_outside_a_url_must_preserve_normal_caret_behavior
   - url_detection_must_remain_core_unit_testable_without_starting_a_browser
+  - http_and_https_urls_must_render_as_blue_underlined_links
+  - url_link_decoration_must_update_after_file_load_insert_paste_and_delete
+  - url_link_decoration_must_not_modify_document_text_dirty_state_or_undo_history
+  - url_link_decoration_must_coexist_with_extension_based_syntax_highlighting
+  - url_link_decoration_updates_must_not_scan_the_entire_document_per_keypress
+  - dynamically_decorated_urls_must_retain_single_click_browser_opening
   - json_formatting_must_accept_valid_single_line_json
   - json_formatting_may_normalize_bom_unicode_whitespace_and_separated_numeric_signs
   - json_formatting_normalization_must_not_change_quoted_string_contents

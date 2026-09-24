@@ -5,6 +5,27 @@ namespace ViTextEditor.Core.Tests;
 
 public sealed class UrlDetectionServiceTests
 {
+    [Fact]
+    public void FindAll_ReturnsEverySupportedUrlWithCharacterRanges()
+    {
+        const string text = "日本語 https://uipath.com と http://example.jp/path。";
+
+        var results = UrlDetectionService.FindAll(text);
+
+        Assert.Equal(2, results.Count);
+        Assert.Equal(new UrlDetectionService.UrlMatch("https://uipath.com", 4, 18), results[0]);
+        Assert.Equal(new UrlDetectionService.UrlMatch("http://example.jp/path", 25, 22), results[1]);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("ftp://example.com/file")]
+    [InlineData("URLではありません")]
+    public void FindAll_ReturnsEmptyWhenNoSupportedUrlExists(string text)
+    {
+        Assert.Empty(UrlDetectionService.FindAll(text));
+    }
+
     [Theory]
     [InlineData("https://example.com/path", 0, "https://example.com/path")]
     [InlineData("日本語 https://example.com/path?q=1&x=2 です", 7, "https://example.com/path?q=1&x=2")]
