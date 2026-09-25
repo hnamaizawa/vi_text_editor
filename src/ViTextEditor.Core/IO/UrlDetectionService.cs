@@ -42,6 +42,7 @@ public static partial class UrlDetectionService
 
     private static string TrimTrailingPunctuation(string value)
     {
+        value = TrimAtFirstUnmatchedClosingDelimiter(value);
         while (value.Length > 0)
         {
             var last = value[^1];
@@ -68,6 +69,49 @@ public static partial class UrlDetectionService
             }
 
             break;
+        }
+        return value;
+    }
+
+    private static string TrimAtFirstUnmatchedClosingDelimiter(string value)
+    {
+        var round = 0;
+        var curly = 0;
+        var fullWidthRound = 0;
+        var fullWidthCurly = 0;
+        for (var index = 0; index < value.Length; index++)
+        {
+            switch (value[index])
+            {
+                case '(':
+                    round++;
+                    break;
+                case ')':
+                    if (round == 0) return value[..index];
+                    round--;
+                    break;
+                case '{':
+                    curly++;
+                    break;
+                case '}':
+                    if (curly == 0) return value[..index];
+                    curly--;
+                    break;
+                case '（':
+                    fullWidthRound++;
+                    break;
+                case '）':
+                    if (fullWidthRound == 0) return value[..index];
+                    fullWidthRound--;
+                    break;
+                case '｛':
+                    fullWidthCurly++;
+                    break;
+                case '｝':
+                    if (fullWidthCurly == 0) return value[..index];
+                    fullWidthCurly--;
+                    break;
+            }
         }
         return value;
     }

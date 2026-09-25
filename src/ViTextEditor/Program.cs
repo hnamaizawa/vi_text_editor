@@ -10,6 +10,7 @@ internal static class Program
     private const string StartupSmokeTestArgument = "--startup-smoke-test";
     private const string StartupOpenSmokeTestArgument = "--startup-open-smoke-test";
     private const string UrlIndicatorSmokeTestArgument = "--url-indicator-smoke-test";
+    private const string WorkspaceTabSmokeTestArgument = "--workspace-tab-smoke-test";
     private const string SingleInstanceReceiveSmokeTestArgument = "--single-instance-receive-smoke-test";
 
     [STAThread]
@@ -28,6 +29,7 @@ internal static class Program
         var startupSmokeTest = args.Any(arg => string.Equals(arg, StartupSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
         var startupOpenSmokeTest = args.Any(arg => string.Equals(arg, StartupOpenSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
         var urlIndicatorSmokeTest = args.Any(arg => string.Equals(arg, UrlIndicatorSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
+        var workspaceTabSmokeTest = args.Any(arg => string.Equals(arg, WorkspaceTabSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
         var singleInstanceSmokeIndex = Array.FindIndex(args, arg =>
             string.Equals(arg, SingleInstanceReceiveSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
         var singleInstanceSmokeTest = singleInstanceSmokeIndex >= 0;
@@ -40,7 +42,8 @@ internal static class Program
         var startupPaths = args
             .Where(arg => !string.Equals(arg, StartupSmokeTestArgument, StringComparison.OrdinalIgnoreCase) &&
                           !string.Equals(arg, StartupOpenSmokeTestArgument, StringComparison.OrdinalIgnoreCase) &&
-                          !string.Equals(arg, UrlIndicatorSmokeTestArgument, StringComparison.OrdinalIgnoreCase))
+                          !string.Equals(arg, UrlIndicatorSmokeTestArgument, StringComparison.OrdinalIgnoreCase) &&
+                          !string.Equals(arg, WorkspaceTabSmokeTestArgument, StringComparison.OrdinalIgnoreCase))
             .ToArray();
 
         if (singleInstanceSmokeTest)
@@ -80,6 +83,60 @@ internal static class Program
                 File.WriteAllText(args[argumentIndex + 1], diagnostic);
             }
             return result;
+        }
+
+        if (workspaceTabSmokeTest)
+        {
+            var argumentIndex = Array.FindIndex(args, arg =>
+                string.Equals(arg, WorkspaceTabSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
+            var diagnosticPath = argumentIndex >= 0 && argumentIndex + 1 < args.Length
+                ? args[argumentIndex + 1]
+                : null;
+
+            int FinishWorkspaceTabSmokeTest(int exitCode, string diagnostic)
+            {
+                if (!string.IsNullOrWhiteSpace(diagnosticPath)) File.WriteAllText(diagnosticPath, diagnostic);
+                return exitCode;
+            }
+
+            var sample = Path.Combine(Path.GetTempPath(), $"vi-text-editor-tab-smoke-{Guid.NewGuid():N}.txt");
+            try
+            {
+                File.WriteAllText(sample, "workspace tab smoke test");
+                using var smokeWorkspace = new EditorWorkspaceForm();
+                smokeWorkspace.CreateControl();
+                if (smokeWorkspace.TabCountForSmokeTest != 1)
+                    return FinishWorkspaceTabSmokeTest(7, $"Initial tab count was {smokeWorkspace.TabCountForSmokeTest}, expected 1.");
+
+                smokeWorkspace.OpenPath(sample);
+                if (smokeWorkspace.TabCountForSmokeTest != 1 || !smokeWorkspace.IsPathOpen(sample))
+                    return FinishWorkspaceTabSmokeTest(8, $"Blank replacement failed: count={smokeWorkspace.TabCountForSmokeTest}, open={smokeWorkspace.IsPathOpen(sample)}.");
+
+                smokeWorkspace.NewTab();
+                if (smokeWorkspace.TabCountForSmokeTest != 2)
+                    return FinishWorkspaceTabSmokeTest(9, $"New tab count was {smokeWorkspace.TabCountForSmokeTest}, expected 2.");
+                smokeWorkspace.MoveTabForSmokeTest(1, 0);
+                if (!smokeWorkspace.TabTitlesForSmokeTest[0].Contains("無題", StringComparison.Ordinal))
+                    return FinishWorkspaceTabSmokeTest(10, $"Tab reorder failed: {string.Join(" | ", smokeWorkspace.TabTitlesForSmokeTest)}.");
+
+                using var protectedWorkspace = new EditorWorkspaceForm();
+                protectedWorkspace.CreateControl();
+                if (!protectedWorkspace.TypeIntoSelectedEditorForSmokeTest("keep me"))
+                    return FinishWorkspaceTabSmokeTest(11, "Could not type into the selected untitled editor.");
+                protectedWorkspace.OpenPath(sample);
+                return protectedWorkspace.TabCountForSmokeTest == 2
+                    ? FinishWorkspaceTabSmokeTest(0, "PASS")
+                    : FinishWorkspaceTabSmokeTest(12, $"Non-empty untitled tab was removed: count={protectedWorkspace.TabCountForSmokeTest}.");
+            }
+            catch (Exception ex)
+            {
+                return FinishWorkspaceTabSmokeTest(13, $"{ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
+            }
+            finally
+            {
+                try { File.Delete(sample); }
+                catch { }
+            }
         }
 
         using var broker = SingleInstanceFileBroker.Acquire();

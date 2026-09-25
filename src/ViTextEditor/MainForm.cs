@@ -131,6 +131,8 @@ public sealed class MainForm : Form
         UpdateStatus();
     }
 
+    internal bool HasUnsavedChanges => _dirty;
+
     private void EditorOnMouseDown(object? sender, MouseEventArgs e)
     {
         _urlClickStart = e.Button == MouseButtons.Left ? e.Location : null;
@@ -522,8 +524,15 @@ public sealed class MainForm : Form
     {
         const string firstUrl = "https://example.com/a/b";
         const string secondUrl = "https://uipath.com/path?q=test";
-        var sample = $"日本語の見出し\r\n- [表示名]({firstUrl})\r\n次の行\r\n  - {secondUrl}\r\n末尾";
+        var sample = $"日本語の見出し\r\n- [UiBank]({firstUrl})（UiPath の説明）\r\n次の行\r\n  - {secondUrl}\r\n末尾";
         LoadTextIntoEditor(sample);
+        SyntaxHighlightingService.Apply(_editor, "url-indicator-smoke.md");
+
+        if (_editor.Styles[18].ForeColor.ToArgb() != SystemColors.WindowText.ToArgb())
+        {
+            diagnostic = "Markdown link construct style must remain normal text color.";
+            return 5000;
+        }
 
         var documentByteLength = _editor.DirectMessage(SciGetLength).ToInt32();
         var expected = new bool[documentByteLength];

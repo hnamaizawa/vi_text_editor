@@ -9,6 +9,8 @@ internal sealed class EditorWorkspaceForm : Form
     private readonly Dictionary<TabPage, WorkspaceTab> _sessions = new();
     private readonly HashSet<MainForm> _deferredClosePass = [];
     private bool _closingWorkspace;
+    private TabPage? _draggedTab;
+    private Point _tabDragStart;
 
     public EditorWorkspaceForm(IEnumerable<string>? startupPaths = null)
     {
@@ -20,6 +22,10 @@ internal sealed class EditorWorkspaceForm : Form
         _tabs.Dock = DockStyle.Fill;
         _tabs.Padding = new Point(16, 5);
         _tabs.SelectedIndexChanged += (_, _) => UpdateWorkspaceTitle();
+        _tabs.MouseDown += TabsOnMouseDown;
+        _tabs.MouseMove += TabsOnMouseMove;
+        _tabs.MouseUp += (_, _) => EndTabDrag();
+        _tabs.MouseLeave += (_, _) => EndTabDrag();
         Controls.Add(_tabs);
 
         EnableFileDrop(this);
@@ -85,13 +91,17 @@ internal sealed class EditorWorkspaceForm : Form
             return;
         }
 
+        var replaceableBlank = FindReplaceableInitialBlankTab();
+
         var length = new FileInfo(fullPath).Length;
         if (LargeFilePolicy.ShouldUseLargeFileMode(length))
         {
             AddLargeFileTab(fullPath, select);
+            if (IsPathOpen(fullPath)) RemoveReplaceableBlankTab(replaceableBlank);
             return;
         }
         AddEditorTab(fullPath, select);
+        if (IsPathOpen(fullPath)) RemoveReplaceableBlankTab(replaceableBlank);
     }
 
     public void OpenPaths(IEnumerable<string> paths)
@@ -136,6 +146,115 @@ internal sealed class EditorWorkspaceForm : Form
         if (e.Data?.GetData(DataFormats.FileDrop) is not string[] paths) return;
         OpenPaths(paths.Where(File.Exists));
         ActivateFromExternalRequest();
+    }
+
+    private TabPage? FindReplaceableInitialBlankTab()
+    {
+        if (_tabs.TabCount != 1) return null;
+        var page = _tabs.TabPages[0];
+        if (!_sessions.TryGetValue(page, out var session) ||
+            session.Kind != WorkspaceTabKind.Editor ||
+            session.FilePath is not null ||
+            session.EditorForm is not { IsDisposed: false } editor ||
+            editor.HasUnsavedChanges)
+        {
+            return null;
+        }
+
+        var textEditor = MainFormWorkspaceBridge.GetEditor(editor);
+        return textEditor is { TextLength: 0 } ? page : null;
+    }
+
+    private void RemoveReplaceableBlankTab(TabPage? page)
+    {
+        if (page is null || !_sessions.Remove(page, out var session)) return;
+        _tabs.TabPages.Remove(page);
+        session.ZoomFilter?.Dispose();
+        session.EditorForm?.Dispose();
+        page.Dispose();
+        if (_tabs.TabCount > 0 && (_tabs.SelectedIndex < 0 || _tabs.SelectedIndex >= _tabs.TabCount))
+            _tabs.SelectedIndex = 0;
+        UpdateWorkspaceTitle();
+    }
+
+    private void TabsOnMouseDown(object? sender, MouseEventArgs e)
+    {
+        if (e.Button != MouseButtons.Left) return;
+        var index = TabIndexAt(e.Location);
+        if (index < 0) return;
+        _draggedTab = _tabs.TabPages[index];
+        _tabDragStart = e.Location;
+    }
+
+    private void TabsOnMouseMove(object? sender, MouseEventArgs e)
+    {
+        if (_draggedTab is null || e.Button != MouseButtons.Left) return;
+        var dragSize = SystemInformation.DragSize;
+        if (Math.Abs(e.X - _tabDragStart.X) <= dragSize.Width / 2 &&
+            Math.Abs(e.Y - _tabDragStart.Y) <= dragSize.Height / 2)
+        {
+            return;
+        }
+
+        var targetIndex = TabIndexAt(e.Location);
+        if (targetIndex < 0) return;
+        var sourceIndex = _tabs.TabPages.IndexOf(_draggedTab);
+        if (sourceIndex < 0 || sourceIndex == targetIndex) return;
+        MoveTab(sourceIndex, targetIndex);
+        _tabDragStart = e.Location;
+        _tabs.Cursor = Cursors.SizeWE;
+    }
+
+    private void EndTabDrag()
+    {
+        _draggedTab = null;
+        _tabs.Cursor = Cursors.Default;
+    }
+
+    private int TabIndexAt(Point location)
+    {
+        for (var index = 0; index < _tabs.TabCount; index++)
+        {
+            if (_tabs.GetTabRect(index).Contains(location)) return index;
+        }
+        return -1;
+    }
+
+    private void MoveTab(int sourceIndex, int targetIndex)
+    {
+        if (sourceIndex < 0 || sourceIndex >= _tabs.TabCount ||
+            targetIndex < 0 || targetIndex >= _tabs.TabCount ||
+            sourceIndex == targetIndex)
+        {
+            return;
+        }
+
+        var page = _tabs.TabPages[sourceIndex];
+        _tabs.TabPages.RemoveAt(sourceIndex);
+        _tabs.TabPages.Insert(targetIndex, page);
+        _tabs.SelectedTab = page;
+        UpdateWorkspaceTitle();
+    }
+
+    internal int TabCountForSmokeTest => _tabs.TabCount;
+
+    internal IReadOnlyList<string> TabTitlesForSmokeTest =>
+        _tabs.TabPages.Cast<TabPage>().Select(page => page.Text).ToArray();
+
+    internal void MoveTabForSmokeTest(int sourceIndex, int targetIndex) => MoveTab(sourceIndex, targetIndex);
+
+    internal bool TypeIntoSelectedEditorForSmokeTest(string text)
+    {
+        if (_tabs.SelectedTab is not { } page ||
+            !_sessions.TryGetValue(page, out var session) ||
+            session.EditorForm is not { IsDisposed: false } form ||
+            MainFormWorkspaceBridge.GetEditor(form) is not { IsDisposed: false } editor)
+        {
+            return false;
+        }
+
+        editor.AddText(text);
+        return true;
     }
 
     public void OpenMarkdownPreview(MainForm source)
@@ -286,14 +405,14 @@ internal sealed class EditorWorkspaceForm : Form
             ReplaceHelpItem(help, item => item.Text.Contains("バージョン情報", StringComparison.Ordinal),
                 new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show(
                     child,
-                    "vi_text_editor v0.1.30\nCounted delete and change operators",
+                    "vi_text_editor v0.1.31\nExact Markdown URLs and draggable tabs",
                     "バージョン情報",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information)));
             ReplaceHelpItem(help, item => item.Text.Contains("ワークスペース操作", StringComparison.Ordinal),
-                new ToolStripMenuItem("v0.1.30 ワークスペース操作", null, (_, _) => MessageBox.Show(
+                new ToolStripMenuItem("v0.1.31 ワークスペース操作", null, (_, _) => MessageBox.Show(
                     child,
-                    "Ctrl+Shift+J: JSON整形\nCtrl+Shift+M: Markdownプレビュー\nCtrl+Tab / Ctrl+Shift+Tab: タブ切替\nCtrl+PageDown / Ctrl+PageUp: タブ切替\n\nMarkdown vi: j/k, Ctrl+F/B/D/U, gg/G, / ? n/N\nMarkdown COMMAND: :set ic / :set noic / :set ic?\nCtrl+マウスホイール: デバウンスされた拡大縮小\nURL: http:// / https:// をリンク表示し、シングルクリックで既定ブラウザから開く\n\nWindows: 二重起動せず、Shell起動／ドラッグ＆ドロップしたファイルを既存ウィンドウの新規タブで開く",
+                    "Ctrl+Shift+J: JSON整形\nCtrl+Shift+M: Markdownプレビュー\nCtrl+Tab / Ctrl+Shift+Tab: タブ切替\nCtrl+PageDown / Ctrl+PageUp: タブ切替\nタブ見出しのドラッグ＆ドロップ: 並べ替え\n\nMarkdown vi: j/k, Ctrl+F/B/D/U, gg/G, / ? n/N\nMarkdown COMMAND: :set ic / :set noic / :set ic?\nCtrl+マウスホイール: デバウンスされた拡大縮小\nURL: http:// / https:// をリンク表示し、シングルクリックで既定ブラウザから開く\n\nWindows: 二重起動せず、Shell起動／ドラッグ＆ドロップしたファイルを既存ウィンドウの新規タブで開く",
                     "ワークスペース操作",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information)));
@@ -407,8 +526,10 @@ internal sealed class EditorWorkspaceForm : Form
 
     private void UpdateWorkspaceTitle()
     {
-        var selected = _tabs.SelectedTab;
-        Text = selected is null ? "vi_text_editor" : $"{selected.Text} - vi_text_editor workspace";
+        var selectedIndex = _tabs.SelectedIndex;
+        Text = selectedIndex < 0 || selectedIndex >= _tabs.TabCount
+            ? "vi_text_editor"
+            : $"{_tabs.TabPages[selectedIndex].Text} - vi_text_editor workspace";
     }
 
     private void FocusSelectedTabContent()

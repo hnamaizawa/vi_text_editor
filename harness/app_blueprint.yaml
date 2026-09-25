@@ -1,6 +1,6 @@
 project:
   name: vi_text_editor
-  version: 0.1.30
+  version: 0.1.31
   platform: windows
   ui: winforms
   editor_component: Scintilla5.NET
@@ -83,6 +83,9 @@ non_negotiable_invariants:
   - reference_mode_must_allow_navigation_yank_set_and_search_but_block_mutating_ex_commands
   - reference_mode_must_block_document_modification
   - workspace_must_support_multiple_document_tabs_without_sharing_text_buffers
+  - opening_a_real_file_must_replace_the_single_clean_empty_untitled_tab
+  - edited_or_nonempty_untitled_tabs_must_never_be_auto_removed
+  - workspace_tabs_must_be_reorderable_by_mouse_drag_and_drop
   - workspace_ctrl_t_ctrl_w_and_ctrl_tab_must_manage_tabs
   - workspace_ctrl_pageup_and_pagedown_must_switch_tabs_even_when_a_viewer_has_focus
   - workspace_tab_switch_must_focus_the_newly_selected_tab_content
@@ -124,6 +127,7 @@ non_negotiable_invariants:
   - dynamically_decorated_urls_must_retain_single_click_browser_opening
   - url_link_decoration_must_begin_exactly_at_http_or_https_scheme
   - markdown_list_prefixes_labels_and_closing_delimiters_must_not_be_decorated_as_url
+  - markdown_lexer_link_style_must_not_color_labels_delimiters_or_following_text_as_url
   - url_decoration_positions_must_use_scintilla_utf16_code_unit_conversion
   - json_formatting_must_accept_valid_single_line_json
   - json_formatting_may_normalize_bom_unicode_whitespace_and_separated_numeric_signs
