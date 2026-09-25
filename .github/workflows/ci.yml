@@ -64,10 +64,19 @@ jobs:
       - name: Smoke-test blank-tab replacement and tab reorder
         shell: pwsh
         run: |
-          $process = Start-Process -FilePath "artifacts/vi_text_editor-win-x64/vi_text_editor.exe" -ArgumentList "--workspace-tab-smoke-test" -PassThru -Wait
+          $diagnostic = Join-Path $env:RUNNER_TEMP "workspace-tab-smoke-result.txt"
+          $arguments = "--workspace-tab-smoke-test `"$diagnostic`""
+          $process = Start-Process -FilePath "artifacts/vi_text_editor-win-x64/vi_text_editor.exe" -ArgumentList $arguments -PassThru -Wait
           if ($process.ExitCode -ne 0) {
             throw "Workspace tab smoke test failed with exit code $($process.ExitCode)."
           }
+      - name: Upload workspace tab smoke diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-tab-smoke-diagnostic
+          path: ${{ runner.temp }}/workspace-tab-smoke-result.txt
+          if-no-files-found: error
       - name: Smoke-test portable Windows shell file open
         shell: pwsh
         run: |

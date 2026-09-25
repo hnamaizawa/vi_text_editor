@@ -87,27 +87,46 @@ internal static class Program
 
         if (workspaceTabSmokeTest)
         {
+            var argumentIndex = Array.FindIndex(args, arg =>
+                string.Equals(arg, WorkspaceTabSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
+            var diagnosticPath = argumentIndex >= 0 && argumentIndex + 1 < args.Length
+                ? args[argumentIndex + 1]
+                : null;
+
+            int FinishWorkspaceTabSmokeTest(int exitCode, string diagnostic)
+            {
+                if (!string.IsNullOrWhiteSpace(diagnosticPath)) File.WriteAllText(diagnosticPath, diagnostic);
+                return exitCode;
+            }
+
             var sample = Path.Combine(Path.GetTempPath(), $"vi-text-editor-tab-smoke-{Guid.NewGuid():N}.txt");
             try
             {
                 File.WriteAllText(sample, "workspace tab smoke test");
                 using var smokeWorkspace = new EditorWorkspaceForm();
                 smokeWorkspace.CreateControl();
-                if (smokeWorkspace.TabCountForSmokeTest != 1) return 7;
+                if (smokeWorkspace.TabCountForSmokeTest != 1)
+                    return FinishWorkspaceTabSmokeTest(7, $"Initial tab count was {smokeWorkspace.TabCountForSmokeTest}, expected 1.");
 
                 smokeWorkspace.OpenPath(sample);
-                if (smokeWorkspace.TabCountForSmokeTest != 1 || !smokeWorkspace.IsPathOpen(sample)) return 8;
+                if (smokeWorkspace.TabCountForSmokeTest != 1 || !smokeWorkspace.IsPathOpen(sample))
+                    return FinishWorkspaceTabSmokeTest(8, $"Blank replacement failed: count={smokeWorkspace.TabCountForSmokeTest}, open={smokeWorkspace.IsPathOpen(sample)}.");
 
                 smokeWorkspace.NewTab();
-                if (smokeWorkspace.TabCountForSmokeTest != 2) return 9;
+                if (smokeWorkspace.TabCountForSmokeTest != 2)
+                    return FinishWorkspaceTabSmokeTest(9, $"New tab count was {smokeWorkspace.TabCountForSmokeTest}, expected 2.");
                 smokeWorkspace.MoveTabForSmokeTest(1, 0);
-                if (!smokeWorkspace.TabTitlesForSmokeTest[0].Contains("無題", StringComparison.Ordinal)) return 10;
+                if (!smokeWorkspace.TabTitlesForSmokeTest[0].Contains("無題", StringComparison.Ordinal))
+                    return FinishWorkspaceTabSmokeTest(10, $"Tab reorder failed: {string.Join(" | ", smokeWorkspace.TabTitlesForSmokeTest)}.");
 
                 using var protectedWorkspace = new EditorWorkspaceForm();
                 protectedWorkspace.CreateControl();
-                if (!protectedWorkspace.TypeIntoSelectedEditorForSmokeTest("keep me")) return 11;
+                if (!protectedWorkspace.TypeIntoSelectedEditorForSmokeTest("keep me"))
+                    return FinishWorkspaceTabSmokeTest(11, "Could not type into the selected untitled editor.");
                 protectedWorkspace.OpenPath(sample);
-                return protectedWorkspace.TabCountForSmokeTest == 2 ? 0 : 12;
+                return protectedWorkspace.TabCountForSmokeTest == 2
+                    ? FinishWorkspaceTabSmokeTest(0, "PASS")
+                    : FinishWorkspaceTabSmokeTest(12, $"Non-empty untitled tab was removed: count={protectedWorkspace.TabCountForSmokeTest}.");
             }
             finally
             {
