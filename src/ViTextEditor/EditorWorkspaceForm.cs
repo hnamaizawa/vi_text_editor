@@ -168,10 +168,12 @@ internal sealed class EditorWorkspaceForm : Form
     private void RemoveReplaceableBlankTab(TabPage? page)
     {
         if (page is null || !_sessions.Remove(page, out var session)) return;
+        _tabs.TabPages.Remove(page);
         session.ZoomFilter?.Dispose();
         session.EditorForm?.Dispose();
-        _tabs.TabPages.Remove(page);
         page.Dispose();
+        if (_tabs.TabCount > 0 && (_tabs.SelectedIndex < 0 || _tabs.SelectedIndex >= _tabs.TabCount))
+            _tabs.SelectedIndex = 0;
         UpdateWorkspaceTitle();
     }
 
@@ -524,8 +526,10 @@ internal sealed class EditorWorkspaceForm : Form
 
     private void UpdateWorkspaceTitle()
     {
-        var selected = _tabs.SelectedTab;
-        Text = selected is null ? "vi_text_editor" : $"{selected.Text} - vi_text_editor workspace";
+        var selectedIndex = _tabs.SelectedIndex;
+        Text = selectedIndex < 0 || selectedIndex >= _tabs.TabCount
+            ? "vi_text_editor"
+            : $"{_tabs.TabPages[selectedIndex].Text} - vi_text_editor workspace";
     }
 
     private void FocusSelectedTabContent()
