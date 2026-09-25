@@ -128,6 +128,10 @@ internal static class Program
                     ? FinishWorkspaceTabSmokeTest(0, "PASS")
                     : FinishWorkspaceTabSmokeTest(12, $"Non-empty untitled tab was removed: count={protectedWorkspace.TabCountForSmokeTest}.");
             }
+            catch (Exception ex)
+            {
+                return FinishWorkspaceTabSmokeTest(13, $"{ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
+            }
             finally
             {
                 try { File.Delete(sample); }
