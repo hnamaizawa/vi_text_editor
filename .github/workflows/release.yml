@@ -79,6 +79,9 @@ jobs:
           $startup = Start-Process -FilePath $exe -ArgumentList "--startup-smoke-test" -PassThru -Wait
           if ($startup.ExitCode -ne 0) { throw "Portable startup smoke test failed with exit code $($startup.ExitCode)." }
 
+          $tabs = Start-Process -FilePath $exe -ArgumentList "--workspace-tab-smoke-test" -PassThru -Wait
+          if ($tabs.ExitCode -ne 0) { throw "Portable workspace tab smoke test failed with exit code $($tabs.ExitCode)." }
+
           $sample = Join-Path $env:RUNNER_TEMP "vi text editor release shell open smoke.txt"
           Set-Content -Path $sample -Value "Release shell-open smoke test" -Encoding utf8
           $arguments = "--startup-open-smoke-test `"$sample`""
@@ -130,6 +133,9 @@ jobs:
           $exe = $files[0].FullName
           $startup = Start-Process -FilePath $exe -ArgumentList "--startup-smoke-test" -PassThru -Wait
           if ($startup.ExitCode -ne 0) { throw "Single-file startup smoke test failed with exit code $($startup.ExitCode)." }
+
+          $tabs = Start-Process -FilePath $exe -ArgumentList "--workspace-tab-smoke-test" -PassThru -Wait
+          if ($tabs.ExitCode -ne 0) { throw "Single-file workspace tab smoke test failed with exit code $($tabs.ExitCode)." }
 
           $sample = Join-Path $env:RUNNER_TEMP "vi text editor release single file shell open smoke.txt"
           Set-Content -Path $sample -Value "Release shell-open smoke test" -Encoding utf8

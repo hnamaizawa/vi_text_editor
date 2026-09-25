@@ -10,6 +10,7 @@ internal static class Program
     private const string StartupSmokeTestArgument = "--startup-smoke-test";
     private const string StartupOpenSmokeTestArgument = "--startup-open-smoke-test";
     private const string UrlIndicatorSmokeTestArgument = "--url-indicator-smoke-test";
+    private const string WorkspaceTabSmokeTestArgument = "--workspace-tab-smoke-test";
     private const string SingleInstanceReceiveSmokeTestArgument = "--single-instance-receive-smoke-test";
 
     [STAThread]
@@ -28,6 +29,7 @@ internal static class Program
         var startupSmokeTest = args.Any(arg => string.Equals(arg, StartupSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
         var startupOpenSmokeTest = args.Any(arg => string.Equals(arg, StartupOpenSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
         var urlIndicatorSmokeTest = args.Any(arg => string.Equals(arg, UrlIndicatorSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
+        var workspaceTabSmokeTest = args.Any(arg => string.Equals(arg, WorkspaceTabSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
         var singleInstanceSmokeIndex = Array.FindIndex(args, arg =>
             string.Equals(arg, SingleInstanceReceiveSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
         var singleInstanceSmokeTest = singleInstanceSmokeIndex >= 0;
@@ -40,7 +42,8 @@ internal static class Program
         var startupPaths = args
             .Where(arg => !string.Equals(arg, StartupSmokeTestArgument, StringComparison.OrdinalIgnoreCase) &&
                           !string.Equals(arg, StartupOpenSmokeTestArgument, StringComparison.OrdinalIgnoreCase) &&
-                          !string.Equals(arg, UrlIndicatorSmokeTestArgument, StringComparison.OrdinalIgnoreCase))
+                          !string.Equals(arg, UrlIndicatorSmokeTestArgument, StringComparison.OrdinalIgnoreCase) &&
+                          !string.Equals(arg, WorkspaceTabSmokeTestArgument, StringComparison.OrdinalIgnoreCase))
             .ToArray();
 
         if (singleInstanceSmokeTest)
@@ -80,6 +83,37 @@ internal static class Program
                 File.WriteAllText(args[argumentIndex + 1], diagnostic);
             }
             return result;
+        }
+
+        if (workspaceTabSmokeTest)
+        {
+            var sample = Path.Combine(Path.GetTempPath(), $"vi-text-editor-tab-smoke-{Guid.NewGuid():N}.txt");
+            try
+            {
+                File.WriteAllText(sample, "workspace tab smoke test");
+                using var smokeWorkspace = new EditorWorkspaceForm();
+                smokeWorkspace.CreateControl();
+                if (smokeWorkspace.TabCountForSmokeTest != 1) return 7;
+
+                smokeWorkspace.OpenPath(sample);
+                if (smokeWorkspace.TabCountForSmokeTest != 1 || !smokeWorkspace.IsPathOpen(sample)) return 8;
+
+                smokeWorkspace.NewTab();
+                if (smokeWorkspace.TabCountForSmokeTest != 2) return 9;
+                smokeWorkspace.MoveTabForSmokeTest(1, 0);
+                if (!smokeWorkspace.TabTitlesForSmokeTest[0].Contains("無題", StringComparison.Ordinal)) return 10;
+
+                using var protectedWorkspace = new EditorWorkspaceForm();
+                protectedWorkspace.CreateControl();
+                if (!protectedWorkspace.TypeIntoSelectedEditorForSmokeTest("keep me")) return 11;
+                protectedWorkspace.OpenPath(sample);
+                return protectedWorkspace.TabCountForSmokeTest == 2 ? 0 : 12;
+            }
+            finally
+            {
+                try { File.Delete(sample); }
+                catch { }
+            }
         }
 
         using var broker = SingleInstanceFileBroker.Acquire();

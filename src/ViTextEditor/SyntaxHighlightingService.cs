@@ -101,7 +101,11 @@ internal static class SyntaxHighlightingService
         SetStyle(editor, 13, KeywordColor, bold: true); // unordered list marker
         SetStyle(editor, 14, KeywordColor, bold: true); // ordered list marker
         SetStyle(editor, 15, SystemColors.GrayText, italic: true); // block quote
-        SetStyle(editor, 18, LinkColor); // link
+        // Lexilla's Markdown link style covers the complete Markdown construct
+        // (`[label](url)`) and can extend into following full-width punctuation.
+        // Keep that construct neutral; MainForm's URL indicators color and
+        // underline only the exact http:// / https:// range.
+        SetStyle(editor, 18, SystemColors.WindowText); // link construct
         for (var style = 19; style <= 21; style++) SetStyle(editor, style, CodeColor, backColor: CodeBackColor);
     }
 
