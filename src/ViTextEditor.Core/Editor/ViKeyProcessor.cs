@@ -142,6 +142,13 @@ public sealed class ViKeyProcessor
             case "D":
                 if (DeleteToLineEnd()) RecordRepeat(["D"]);
                 return true;
+            case "C":
+            {
+                var changed = ChangeToLineEnd();
+                BeginInsertRepeat(["C"], changed);
+                SetMode(EditorMode.Insert);
+                return true;
+            }
             case "g":
             case "d":
             case "y":
@@ -176,14 +183,28 @@ public sealed class ViKeyProcessor
             return true;
         }
 
-        if (pending == "d")
+        var operatorKey = pending[0];
+        if (operatorKey is 'd' or 'y' or 'c' &&
+            key.Length == 1 && char.IsAsciiDigit(key[0]) &&
+            (pending.Length > 1 || key != "0"))
+        {
+            _pending = pending + key;
+            return true;
+        }
+
+        var operatorCount = pending.Length > 1 &&
+                            int.TryParse(pending.AsSpan(1), out var parsedCount)
+            ? Math.Clamp(parsedCount, 1, 999_999)
+            : 1;
+
+        if (operatorKey == 'd')
         {
             bool changed;
             switch (key)
             {
                 case "d":
-                    changed = DeleteCurrentLine();
-                    if (changed) RecordRepeat(["d", "d"]);
+                    changed = DeleteLines(operatorCount);
+                    if (changed) RecordRepeat(OperatorTokens('d', operatorCount, "d"));
                     return true;
                 case "w":
                     changed = DeleteWordMotion(bigWord: false);
@@ -208,14 +229,22 @@ public sealed class ViKeyProcessor
             }
         }
 
-        if (pending == "y" && key == "y")
+        if (operatorKey == 'y' && key == "y")
         {
-            YankCurrentLine();
+            YankLines(operatorCount);
             return true;
         }
 
-        if (pending == "c")
+        if (operatorKey == 'c')
         {
+            if (key == "c")
+            {
+                var changed = ChangeLines(operatorCount);
+                BeginInsertRepeat(OperatorTokens('c', operatorCount, "c"), changed);
+                SetMode(EditorMode.Insert);
+                return true;
+            }
+
             if (key is "w" or "e")
             {
                 var changed = ChangeWord(bigWord: false);
@@ -243,6 +272,11 @@ public sealed class ViKeyProcessor
 
         return true;
     }
+
+    private static string[] OperatorTokens(char operation, int count, string motion) =>
+        count == 1
+            ? [operation.ToString(), motion]
+            : [operation.ToString(), count.ToString(), motion];
 
     private void BeginInsertRepeat(string[] tokens, bool baseChanged)
     {
@@ -557,18 +591,30 @@ public sealed class ViKeyProcessor
         return true;
     }
 
-    private bool DeleteCurrentLine()
+    private bool DeleteCurrentLine() => DeleteLines(1);
+
+    private bool DeleteLines(int count)
     {
         if (_editor.TextLength == 0) return false;
+        count = Math.Max(1, count);
         var current = Math.Clamp(_editor.CaretPosition, 0, _editor.TextLength - 1);
         var start = _editor.LineStart(current);
-        var contentEnd = _editor.LineEndExclusive(current);
-        _registers.Yank(null, [_editor.GetTextRange(start, Math.Max(0, contentEnd - start))]);
+        var scan = start;
+        var lines = new List<string>(Math.Min(count, 1024));
+        var afterBreak = start;
+        for (var lineIndex = 0; lineIndex < count && scan < _editor.TextLength; lineIndex++)
+        {
+            var contentEnd = _editor.LineEndExclusive(scan);
+            lines.Add(_editor.GetTextRange(scan, Math.Max(0, contentEnd - scan)));
+            afterBreak = SkipLineBreak(contentEnd);
+            if (afterBreak <= contentEnd) break;
+            scan = afterBreak;
+        }
+        _registers.Yank(null, lines);
 
-        var afterBreak = SkipLineBreak(contentEnd);
         int deleteStart;
         int deleteLength;
-        if (afterBreak > contentEnd)
+        if (afterBreak < _editor.TextLength)
         {
             deleteStart = start;
             deleteLength = afterBreak - start;
@@ -587,20 +633,57 @@ public sealed class ViKeyProcessor
 
         _editor.DeleteRange(deleteStart, deleteLength);
         var remaining = _editor.TextLength;
-        _editor.MoveCaret(remaining == 0 ? 0 : Math.Min(deleteStart, remaining - 1));
+        _editor.MoveCaret(remaining == 0 ? 0 : _editor.LineStart(Math.Min(start, remaining - 1)));
         return true;
     }
 
-    private void YankCurrentLine()
+    private void YankCurrentLine() => YankLines(1);
+
+    private void YankLines(int count)
     {
         if (_editor.TextLength == 0)
         {
             _registers.Yank(null, [string.Empty]);
             return;
         }
+        count = Math.Max(1, count);
+        var scan = _editor.LineStart(_editor.CaretPosition);
+        var lines = new List<string>(Math.Min(count, 1024));
+        for (var lineIndex = 0; lineIndex < count && scan < _editor.TextLength; lineIndex++)
+        {
+            var end = _editor.LineEndExclusive(scan);
+            lines.Add(_editor.GetTextRange(scan, Math.Max(0, end - scan)));
+            var next = SkipLineBreak(end);
+            if (next <= end) break;
+            scan = next;
+        }
+        _registers.Yank(null, lines);
+    }
+
+    private bool ChangeLines(int count)
+    {
+        if (_editor.TextLength == 0) return false;
+        count = Math.Max(1, count);
         var start = _editor.LineStart(_editor.CaretPosition);
-        var end = _editor.LineEndExclusive(_editor.CaretPosition);
-        _registers.Yank(null, [_editor.GetTextRange(start, Math.Max(0, end - start))]);
+        var scan = start;
+        var lines = new List<string>(Math.Min(count, 1024));
+        var end = start;
+        for (var lineIndex = 0; lineIndex < count && scan < _editor.TextLength; lineIndex++)
+        {
+            var contentEnd = _editor.LineEndExclusive(scan);
+            lines.Add(_editor.GetTextRange(scan, Math.Max(0, contentEnd - scan)));
+            end = contentEnd;
+            if (lineIndex + 1 >= count) break;
+            var next = SkipLineBreak(contentEnd);
+            if (next <= contentEnd) break;
+            end = next;
+            scan = next;
+        }
+
+        _registers.Yank(null, lines);
+        _editor.DeleteRange(start, Math.Max(0, end - start));
+        _editor.MoveCaret(Math.Min(start, _editor.TextLength));
+        return true;
     }
 
     private bool Paste(bool after)

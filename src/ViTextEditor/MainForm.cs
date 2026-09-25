@@ -643,7 +643,7 @@ public sealed class MainForm : Form
         if (!char.IsControl(e.KeyChar)) e.Handled = true;
     }
 
-    private static bool IsMutatingViToken(string token) => token is "i" or "a" or "o" or "O" or "x" or "d" or "D" or "c" or "p" or "P" or "." or "u" or "Ctrl+r";
+    private static bool IsMutatingViToken(string token) => token is "i" or "a" or "o" or "O" or "x" or "d" or "D" or "c" or "C" or "p" or "P" or "." or "u" or "Ctrl+r";
 
     private static string? ToViToken(KeyEventArgs e)
     {
@@ -660,11 +660,13 @@ public sealed class MainForm : Form
         {
             return e.KeyCode switch
             {
-                Keys.D => "D", Keys.E => "E", Keys.G => "G", Keys.O => "O", Keys.P => "P", Keys.W => "W", Keys.B => "B", Keys.N => "N", Keys.D6 => "^", Keys.D4 => "$", _ => null
+                Keys.C => "C", Keys.D => "D", Keys.E => "E", Keys.G => "G", Keys.O => "O", Keys.P => "P", Keys.W => "W", Keys.B => "B", Keys.N => "N", Keys.D6 => "^", Keys.D4 => "$", _ => null
             };
         }
         if (e.KeyCode == Keys.OemQuestion) return "/";
         if (e.KeyCode == Keys.OemPeriod) return ".";
+        if (e.KeyCode is >= Keys.D1 and <= Keys.D9) return ((int)e.KeyCode - (int)Keys.D0).ToString();
+        if (e.KeyCode is >= Keys.NumPad0 and <= Keys.NumPad9) return ((int)e.KeyCode - (int)Keys.NumPad0).ToString();
         return e.KeyCode switch
         {
             Keys.I => "i", Keys.A => "a", Keys.O => "o", Keys.H => "h", Keys.J => "j", Keys.K => "k", Keys.L => "l",

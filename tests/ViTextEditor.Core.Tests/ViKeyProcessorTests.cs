@@ -167,6 +167,67 @@ public sealed class ViKeyProcessorTests
     }
 
     [Fact]
+    public void DCountDDeletesAndYanksRequestedLinesForPut()
+    {
+        var (editor, vi) = Create("one\ntwo\nthree\nfour\nfive", 4);
+
+        vi.Handle("d");
+        vi.Handle("3");
+        vi.Handle("d");
+
+        Assert.Equal("one\nfive", editor.Text);
+        Assert.Equal(EditorMode.Normal, vi.Mode);
+
+        vi.Handle("p");
+        Assert.Equal("one\nfive\ntwo\nthree\nfour", editor.Text);
+    }
+
+    [Fact]
+    public void DCountDClampsAtEndOfFileAndDotRepeatsCount()
+    {
+        var (editor, vi) = Create("one\ntwo\nthree\nfour\nfive\nsix", 0);
+        vi.Handle("d");
+        vi.Handle("2");
+        vi.Handle("d");
+        vi.Handle(".");
+        Assert.Equal("five\nsix", editor.Text);
+
+        vi.Handle("d");
+        vi.Handle("9");
+        vi.Handle("d");
+        Assert.Equal(string.Empty, editor.Text);
+    }
+
+    [Fact]
+    public void CwReplacesWholeWordAfterTypingAndEscape()
+    {
+        var (editor, vi) = Create("abc tail", 0);
+        vi.Handle("c");
+        vi.Handle("w");
+        editor.InsertText(editor.CaretPosition, "xy");
+        vi.Handle("Esc");
+
+        Assert.Equal("xy tail", editor.Text);
+        Assert.Equal(EditorMode.Normal, vi.Mode);
+    }
+
+    [Fact]
+    public void CcAndUppercaseCEnterInsertModeAfterDeletingTarget()
+    {
+        var (lineEditor, lineVi) = Create("one\ntwo\nthree", 4);
+        lineVi.Handle("c");
+        lineVi.Handle("c");
+        Assert.Equal("one\n\nthree", lineEditor.Text);
+        Assert.Equal(4, lineEditor.CaretPosition);
+        Assert.Equal(EditorMode.Insert, lineVi.Mode);
+
+        var (tailEditor, tailVi) = Create("one two\nthree", 4);
+        tailVi.Handle("C");
+        Assert.Equal("one \nthree", tailEditor.Text);
+        Assert.Equal(EditorMode.Insert, tailVi.Mode);
+    }
+
+    [Fact]
     public void YyThenPPastesLineBelow()
     {
         var (editor, vi) = Create("one\ntwo", 0);
