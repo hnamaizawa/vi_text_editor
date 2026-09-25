@@ -1,6 +1,6 @@
 project:
   name: vi_text_editor
-  version: 0.1.28
+  version: 0.1.30
   platform: windows
   ui: winforms
   editor_component: Scintilla5.NET
@@ -41,6 +41,9 @@ non_negotiable_invariants:
   - supplemental_motion_routing_must_never_intercept_colon_slash_or_question_command_prefixes
   - punctuation_motions_must_be_routed_from_the_actual_input_character_not_layout_dependent_oem_keycodes
   - change_word_commands_must_delete_target_and_enter_insert_mode
+  - change_operators_must_support_cw_cW_ce_cE_c_dollar_uppercase_C_and_cc
+  - counted_line_delete_must_support_d_count_d_and_yank_deleted_lines_for_put
+  - dot_must_preserve_the_count_of_counted_line_delete
   - delete_word_commands_must_support_dw_dW_de_dE_and_line_end_delete
   - dot_must_repeat_the_last_change_not_plain_navigation_or_yank
   - dot_must_repeat_put_delete_change_and_insert_text_changes
