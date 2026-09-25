@@ -31,6 +31,16 @@ public sealed class UrlDetectionServiceTests
             match => Assert.Equal(new UrlDetectionService.UrlMatch("https://target.example/path", 82, 27), match));
     }
 
+    [Fact]
+    public void FindAll_StopsAtMarkdownClosingParenthesisBeforeAdjacentJapaneseText()
+    {
+        const string text = "[UiBank](https://uibank.uipath.com/welcome)（UiPath が公開しているサイト）";
+
+        var match = Assert.Single(UrlDetectionService.FindAll(text));
+
+        Assert.Equal(new UrlDetectionService.UrlMatch("https://uibank.uipath.com/welcome", 9, 33), match);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("ftp://example.com/file")]
