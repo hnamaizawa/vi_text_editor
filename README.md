@@ -2,7 +2,7 @@
 
 Windows向けの軽量テキストエディターです。EmEditor／サクラエディタに近いGUIとファイル操作を持ち、基本操作はvi/Vim系キーバインドで行います。
 
-現在のアプリ版は **v0.1.32** です。
+現在のアプリ版は **v0.1.33** です。
 
 ## 主な特徴
 
@@ -36,6 +36,15 @@ Windows向けの軽量テキストエディターです。EmEditor／サクラ�
 10. AIがLatest ReleaseにSingle-file EXE / Portable ZIPが公開されたことを確認する
 
 ## 変更履歴
+
+### v0.1.33
+
+- 既存の `cw/cW/ce/cE` と `dw/dW/de/dE` に回数指定を適用し、`c2w`、`d3e` などへ対応
+- 後方単語motionの `db/dB`、`cb/cB` と、行頭motionの `d0/d^`、`c0/c^` を追加
+- 文字範囲yankの `yw/yW/ye/yE/yb/yB/y0/y^/y$` を追加
+- `Y` を `yy` と同じ現在行の行単位yankとして追加
+- 回数付きdelete/changeを `.` で同じ回数のまま繰り返せるよう対応
+- operator、レジスタ、貼り付け、繰り返しをCore回帰テストで検証
 
 ### v0.1.32
 
@@ -351,9 +360,9 @@ Windows向けの軽量テキストエディターです。EmEditor／サクラ�
 | `gg/G` | ファイル先頭 / 最終行 |
 | `J` / `gJ` | 次行を空白調整あり / 空白調整なしで現在行へ結合 |
 | `/文字列` / `?文字列` / `n` / `N` | 検索と繰り返し |
-| `cw/cW/ce/cE/c$` | changeしてINSERT |
-| `dw/dW/de/dE/d$`, `D`, `dd` | delete |
-| `x/yy/p/P` | 1文字削除 / yank / paste |
+| `cw/cW/ce/cE/cb/cB/c0/c^/c$` | 対象範囲をchangeしてINSERT。word系は回数指定可 |
+| `dw/dW/de/dE/db/dB/d0/d^/d$`, `D`, `dd` | 対象範囲をdelete。word系は回数指定可 |
+| `x`, `yy/Y`, `yw/yW/ye/yE/yb/yB/y0/y^/y$`, `p/P` | 1文字削除 / yank / paste |
 | `.` | 直前の変更を繰り返す |
 | `u` / `Ctrl+R` | Undo / Redo |
 | `5j`, `3w`, `10G`, `2gg` 等 | 数値プレフィックス付き移動 |

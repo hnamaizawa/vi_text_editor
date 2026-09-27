@@ -130,6 +130,59 @@ public sealed class ViKeyProcessorTests
         Assert.Equal("\nbeta", editor.Text);
     }
 
+    [Theory]
+    [InlineData("w", "three")]
+    [InlineData("W", "three")]
+    [InlineData("e", " three")]
+    [InlineData("E", " three")]
+    public void CountedDeleteWordMotionsApplyCount(string motion, string expected)
+    {
+        var (editor, vi) = Create("one two three");
+
+        vi.Handle("d");
+        vi.Handle("2");
+        vi.Handle(motion);
+
+        Assert.Equal(expected, editor.Text);
+        Assert.Equal(EditorMode.Normal, vi.Mode);
+    }
+
+    [Fact]
+    public void CountedDeleteWordMotionIsRepeatableWithDot()
+    {
+        var (editor, vi) = Create("one two three four");
+        vi.Handle("d");
+        vi.Handle("2");
+        vi.Handle("w");
+        vi.Handle(".");
+        Assert.Equal("four", editor.Text);
+    }
+
+    [Theory]
+    [InlineData("b", "two")]
+    [InlineData("B", "two")]
+    public void DeleteBackwardWordMotionsDeleteToPreviousWordStart(string motion, string expected)
+    {
+        var (editor, vi) = Create("one two", 4);
+        vi.Handle("d");
+        vi.Handle(motion);
+        Assert.Equal(expected, editor.Text);
+    }
+
+    [Fact]
+    public void DeleteZeroAndCaretDeleteTowardLineStart()
+    {
+        var (zeroEditor, zeroVi) = Create("   one two", 7);
+        zeroVi.Handle("d");
+        zeroVi.Handle("0");
+        Assert.Equal("two", zeroEditor.Text);
+
+        var (caretEditor, caretVi) = Create("   one two", 7);
+        caretVi.Handle("d");
+        caretVi.Handle("^");
+        Assert.Equal("   two", caretEditor.Text);
+    }
+
     [Fact]
     public void DeAndDEDeleteToWordEnd()
     {
@@ -212,6 +265,39 @@ public sealed class ViKeyProcessorTests
     }
 
     [Fact]
+    public void CountedChangeAndBackwardChangeEnterInsertMode()
+    {
+        var (countEditor, countVi) = Create("one two three");
+        countVi.Handle("c");
+        countVi.Handle("2");
+        countVi.Handle("w");
+        Assert.Equal(" three", countEditor.Text);
+        Assert.Equal(EditorMode.Insert, countVi.Mode);
+
+        var (backEditor, backVi) = Create("one two", 4);
+        backVi.Handle("c");
+        backVi.Handle("b");
+        Assert.Equal("two", backEditor.Text);
+        Assert.Equal(EditorMode.Insert, backVi.Mode);
+    }
+
+    [Fact]
+    public void ChangeZeroAndCaretChangeTowardLineStart()
+    {
+        var (zeroEditor, zeroVi) = Create("   one two", 7);
+        zeroVi.Handle("c");
+        zeroVi.Handle("0");
+        Assert.Equal("two", zeroEditor.Text);
+        Assert.Equal(EditorMode.Insert, zeroVi.Mode);
+
+        var (caretEditor, caretVi) = Create("   one two", 7);
+        caretVi.Handle("c");
+        caretVi.Handle("^");
+        Assert.Equal("   two", caretEditor.Text);
+        Assert.Equal(EditorMode.Insert, caretVi.Mode);
+    }
+
+    [Fact]
     public void CcAndUppercaseCEnterInsertModeAfterDeletingTarget()
     {
         var (lineEditor, lineVi) = Create("one\ntwo\nthree", 4);
@@ -235,6 +321,52 @@ public sealed class ViKeyProcessorTests
         vi.Handle("y");
         vi.Handle("p");
         Assert.Equal("one\none\ntwo", editor.Text);
+    }
+
+    [Theory]
+    [InlineData("w", "one ")]
+    [InlineData("e", "one")]
+    [InlineData("$", "one two")]
+    public void YankMotionsStoreCharacterwiseText(string motion, string expected)
+    {
+        var editor = new FakeEditor("one two", 0);
+        var registers = new ViRegisterStore();
+        var vi = new ViKeyProcessor(editor, registers);
+
+        vi.Handle("y");
+        vi.Handle(motion);
+
+        Assert.True(registers.TryGetContent(null, out var content));
+        Assert.False(content.IsLinewise);
+        Assert.Equal(expected, content.ToText("\n"));
+        Assert.Equal("one two", editor.Text);
+    }
+
+    [Fact]
+    public void BackwardAndLineStartYankMotionsUseExpectedRange()
+    {
+        foreach (var (motion, expected) in new[] { ("b", "one "), ("0", "one "), ("^", "one ") })
+        {
+            var editor = new FakeEditor("one two", 4);
+            var registers = new ViRegisterStore();
+            var vi = new ViKeyProcessor(editor, registers);
+            vi.Handle("y");
+            vi.Handle(motion);
+            Assert.True(registers.TryGetContent(null, out var content));
+            Assert.Equal(expected, content.ToText("\n"));
+        }
+    }
+
+    [Fact]
+    public void UppercaseYYanksCurrentLineLikeYy()
+    {
+        var editor = new FakeEditor("one\ntwo", 0);
+        var registers = new ViRegisterStore();
+        var vi = new ViKeyProcessor(editor, registers);
+        vi.Handle("Y");
+        Assert.True(registers.TryGetContent(null, out var content));
+        Assert.True(content.IsLinewise);
+        Assert.Equal("one", content.ToText("\n"));
     }
 
     [Fact]

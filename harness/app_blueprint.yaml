@@ -1,6 +1,6 @@
 project:
   name: vi_text_editor
-  version: 0.1.32
+  version: 0.1.33
   platform: windows
   ui: winforms
   editor_component: Scintilla5.NET
@@ -45,6 +45,11 @@ non_negotiable_invariants:
   - counted_line_delete_must_support_d_count_d_and_yank_deleted_lines_for_put
   - dot_must_preserve_the_count_of_counted_line_delete
   - delete_word_commands_must_support_dw_dW_de_dE_and_line_end_delete
+  - counted_word_operators_must_apply_to_d_and_c_with_w_W_e_and_E
+  - backward_word_operators_must_support_db_dB_cb_and_cB
+  - line_start_operators_must_support_d0_d_caret_c0_and_c_caret
+  - yank_motions_must_support_w_W_e_E_b_B_0_caret_and_dollar
+  - uppercase_Y_must_yank_the_current_line_linewise
   - dot_must_repeat_the_last_change_not_plain_navigation_or_yank
   - dot_must_repeat_put_delete_change_and_insert_text_changes
   - uppercase_J_must_join_the_current_line_with_the_next_line_using_vim_spacing
