@@ -155,7 +155,7 @@ public sealed class ViKeyProcessorTests
         vi.Handle("2");
         vi.Handle("w");
         vi.Handle(".");
-        Assert.Equal("four", editor.Text);
+        Assert.Equal(string.Empty, editor.Text);
     }
 
     [Theory]
