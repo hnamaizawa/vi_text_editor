@@ -139,6 +139,9 @@ public sealed class ViKeyProcessor
             case "G":
                 MoveLastLine();
                 return true;
+            case "J":
+                if (JoinWithNextLine(insertSeparator: true)) RecordRepeat(["J"]);
+                return true;
             case "D":
                 if (DeleteToLineEnd()) RecordRepeat(["D"]);
                 return true;
@@ -180,6 +183,12 @@ public sealed class ViKeyProcessor
         if (pending == "g" && key == "g")
         {
             _editor.MoveCaret(0);
+            return true;
+        }
+
+        if (pending == "g" && key == "J")
+        {
+            if (JoinWithNextLine(insertSeparator: false)) RecordRepeat(["g", "J"]);
             return true;
         }
 
@@ -492,6 +501,39 @@ public sealed class ViKeyProcessor
             return;
         }
         _editor.MoveCaret(_editor.LineStart(length - 1));
+    }
+
+    private bool JoinWithNextLine(bool insertSeparator)
+    {
+        var length = _editor.TextLength;
+        if (length == 0) return false;
+
+        var current = Math.Clamp(_editor.CaretPosition, 0, length - 1);
+        var currentStart = _editor.LineStart(current);
+        var currentEnd = _editor.LineEndExclusive(current);
+        var nextStart = SkipLineBreak(currentEnd);
+        if (nextStart <= currentEnd || nextStart >= length) return false;
+
+        var deleteEnd = nextStart;
+        var separator = string.Empty;
+        if (insertSeparator)
+        {
+            var nextEnd = _editor.LineEndExclusive(nextStart);
+            while (deleteEnd < nextEnd && _editor.CharAt(deleteEnd) is ' ' or '\t') deleteEnd++;
+
+            var currentIsEmpty = currentEnd == currentStart;
+            var nextIsEmpty = deleteEnd >= nextEnd;
+            var currentEndsWithWhitespace = !currentIsEmpty && char.IsWhiteSpace(_editor.CharAt(currentEnd - 1));
+            var nextStartsWithClosingParenthesis = !nextIsEmpty && _editor.CharAt(deleteEnd) == ')';
+            if (!currentIsEmpty && !nextIsEmpty && !currentEndsWithWhitespace && !nextStartsWithClosingParenthesis)
+            {
+                separator = " ";
+            }
+        }
+
+        _editor.ReplaceRange(currentEnd, deleteEnd - currentEnd, separator);
+        _editor.MoveCaret(currentEnd);
+        return true;
     }
 
     private bool ChangeWord(bool bigWord)

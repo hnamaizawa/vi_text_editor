@@ -585,6 +585,7 @@ public sealed class MainForm : Form
 
         if (_referenceMode && IsMutatingViToken(token))
         {
+            _vi.Handle("Esc");
             e.Handled = true;
             e.SuppressKeyPress = true;
             return;
@@ -652,7 +653,7 @@ public sealed class MainForm : Form
         if (!char.IsControl(e.KeyChar)) e.Handled = true;
     }
 
-    private static bool IsMutatingViToken(string token) => token is "i" or "a" or "o" or "O" or "x" or "d" or "D" or "c" or "C" or "p" or "P" or "." or "u" or "Ctrl+r";
+    private static bool IsMutatingViToken(string token) => token is "i" or "a" or "o" or "O" or "x" or "d" or "D" or "c" or "C" or "J" or "p" or "P" or "." or "u" or "Ctrl+r";
 
     private static string? ToViToken(KeyEventArgs e)
     {
@@ -669,7 +670,7 @@ public sealed class MainForm : Form
         {
             return e.KeyCode switch
             {
-                Keys.C => "C", Keys.D => "D", Keys.E => "E", Keys.G => "G", Keys.O => "O", Keys.P => "P", Keys.W => "W", Keys.B => "B", Keys.N => "N", Keys.D6 => "^", Keys.D4 => "$", _ => null
+                Keys.C => "C", Keys.D => "D", Keys.E => "E", Keys.G => "G", Keys.J => "J", Keys.O => "O", Keys.P => "P", Keys.W => "W", Keys.B => "B", Keys.N => "N", Keys.D6 => "^", Keys.D4 => "$", _ => null
             };
         }
         if (e.KeyCode == Keys.OemQuestion) return "/";
