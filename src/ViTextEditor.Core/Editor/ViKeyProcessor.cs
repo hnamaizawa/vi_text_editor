@@ -142,6 +142,9 @@ public sealed class ViKeyProcessor
             case "J":
                 if (JoinWithNextLine(insertSeparator: true)) RecordRepeat(["J"]);
                 return true;
+            case "Y":
+                YankLines(1);
+                return true;
             case "D":
                 if (DeleteToLineEnd()) RecordRepeat(["D"]);
                 return true;
@@ -216,20 +219,33 @@ public sealed class ViKeyProcessor
                     if (changed) RecordRepeat(OperatorTokens('d', operatorCount, "d"));
                     return true;
                 case "w":
-                    changed = DeleteWordMotion(bigWord: false);
-                    if (changed) RecordRepeat(["d", "w"]);
+                    changed = DeleteWordMotion(bigWord: false, operatorCount);
+                    if (changed) RecordRepeat(OperatorTokens('d', operatorCount, "w"));
                     return true;
                 case "W":
-                    changed = DeleteWordMotion(bigWord: true);
-                    if (changed) RecordRepeat(["d", "W"]);
+                    changed = DeleteWordMotion(bigWord: true, operatorCount);
+                    if (changed) RecordRepeat(OperatorTokens('d', operatorCount, "W"));
                     return true;
                 case "e":
-                    changed = DeleteToWordEnd(bigWord: false);
-                    if (changed) RecordRepeat(["d", "e"]);
+                    changed = DeleteToWordEnd(bigWord: false, operatorCount);
+                    if (changed) RecordRepeat(OperatorTokens('d', operatorCount, "e"));
                     return true;
                 case "E":
-                    changed = DeleteToWordEnd(bigWord: true);
-                    if (changed) RecordRepeat(["d", "E"]);
+                    changed = DeleteToWordEnd(bigWord: true, operatorCount);
+                    if (changed) RecordRepeat(OperatorTokens('d', operatorCount, "E"));
+                    return true;
+                case "b":
+                    changed = DeletePreviousWords(bigWord: false, operatorCount);
+                    if (changed) RecordRepeat(OperatorTokens('d', operatorCount, "b"));
+                    return true;
+                case "B":
+                    changed = DeletePreviousWords(bigWord: true, operatorCount);
+                    if (changed) RecordRepeat(OperatorTokens('d', operatorCount, "B"));
+                    return true;
+                case "0":
+                case "^":
+                    changed = DeleteToLineStart(firstNonBlank: key == "^");
+                    if (changed) RecordRepeat(["d", key]);
                     return true;
                 case "$":
                     changed = DeleteToLineEnd();
@@ -238,10 +254,15 @@ public sealed class ViKeyProcessor
             }
         }
 
-        if (operatorKey == 'y' && key == "y")
+        if (operatorKey == 'y')
         {
-            YankLines(operatorCount);
-            return true;
+            if (key == "y")
+            {
+                YankLines(operatorCount);
+                return true;
+            }
+
+            if (YankMotion(key, operatorCount)) return true;
         }
 
         if (operatorKey == 'c')
@@ -256,15 +277,31 @@ public sealed class ViKeyProcessor
 
             if (key is "w" or "e")
             {
-                var changed = ChangeWord(bigWord: false);
-                BeginInsertRepeat(["c", key], changed);
+                var changed = ChangeWordMotion(bigWord: false, operatorCount, nextWordMotion: key == "w");
+                BeginInsertRepeat(OperatorTokens('c', operatorCount, key), changed);
                 SetMode(EditorMode.Insert);
                 return true;
             }
 
             if (key is "W" or "E")
             {
-                var changed = ChangeWord(bigWord: true);
+                var changed = ChangeWordMotion(bigWord: true, operatorCount, nextWordMotion: key == "W");
+                BeginInsertRepeat(OperatorTokens('c', operatorCount, key), changed);
+                SetMode(EditorMode.Insert);
+                return true;
+            }
+
+            if (key is "b" or "B")
+            {
+                var changed = DeletePreviousWords(bigWord: key == "B", operatorCount);
+                BeginInsertRepeat(OperatorTokens('c', operatorCount, key), changed);
+                SetMode(EditorMode.Insert);
+                return true;
+            }
+
+            if (key is "0" or "^")
+            {
+                var changed = DeleteToLineStart(firstNonBlank: key == "^");
                 BeginInsertRepeat(["c", key], changed);
                 SetMode(EditorMode.Insert);
                 return true;
@@ -536,24 +573,26 @@ public sealed class ViKeyProcessor
         return true;
     }
 
-    private bool ChangeWord(bool bigWord)
+    private bool ChangeWordMotion(bool bigWord, int count, bool nextWordMotion)
     {
         var length = _editor.TextLength;
         if (length == 0) return false;
         var start = Math.Clamp(_editor.CaretPosition, 0, length - 1);
-        var end = start;
-        if (char.IsWhiteSpace(_editor.CharAt(start)))
+        int end;
+        if (nextWordMotion && char.IsWhiteSpace(_editor.CharAt(start)))
         {
-            while (end < length && char.IsWhiteSpace(_editor.CharAt(end))) end++;
-        }
-        else if (bigWord)
-        {
-            while (end < length && !char.IsWhiteSpace(_editor.CharAt(end))) end++;
+            end = start;
+            for (var index = 0; index < Math.Max(1, count); index++)
+            {
+                var next = FindNextWordStart(end, bigWord);
+                if (next <= end) break;
+                end = next;
+            }
         }
         else
         {
-            var wordClass = ClassifySmallWord(_editor.CharAt(start));
-            while (end < length && ClassifySmallWord(_editor.CharAt(end)) == wordClass) end++;
+            // Vim treats cw/cW on a non-blank character like ce/cE.
+            end = FindWordEndExclusive(start, bigWord, count);
         }
         var changed = DeleteIntoRegister(start, end);
         if (changed) _editor.MoveCaret(Math.Min(start, _editor.TextLength));
@@ -569,35 +608,154 @@ public sealed class ViKeyProcessor
         return changed;
     }
 
-    private bool DeleteWordMotion(bool bigWord)
+    private bool DeleteWordMotion(bool bigWord, int count)
     {
         if (_editor.TextLength == 0) return false;
         var start = Math.Clamp(_editor.CaretPosition, 0, _editor.TextLength - 1);
         var lineEnd = _editor.LineEndExclusive(start);
-        var end = FindNextWordStart(start, bigWord);
+        var end = start;
+        for (var index = 0; index < Math.Max(1, count); index++)
+        {
+            var next = FindNextWordStart(end, bigWord);
+            if (next <= end) break;
+            end = next;
+        }
         if (end > lineEnd) end = lineEnd;
         if (end <= start) end = Math.Min(_editor.TextLength, start + 1);
         return DeleteIntoRegister(start, end);
     }
 
-    private bool DeleteToWordEnd(bool bigWord)
+    private bool DeleteToWordEnd(bool bigWord, int count)
     {
         var length = _editor.TextLength;
         if (length == 0) return false;
         var start = Math.Clamp(_editor.CaretPosition, 0, length - 1);
-        var end = start;
-        while (end < length && char.IsWhiteSpace(_editor.CharAt(end))) end++;
-        if (end >= length) return DeleteIntoRegister(start, length);
-        if (bigWord)
-        {
-            while (end < length && !char.IsWhiteSpace(_editor.CharAt(end))) end++;
-        }
-        else
-        {
-            var wordClass = ClassifySmallWord(_editor.CharAt(end));
-            while (end < length && ClassifySmallWord(_editor.CharAt(end)) == wordClass) end++;
-        }
+        var end = FindWordEndExclusive(start, bigWord, count);
         return DeleteIntoRegister(start, end);
+    }
+
+    private int FindWordEndExclusive(int start, bool bigWord, int count)
+    {
+        var length = _editor.TextLength;
+        var lineEnd = _editor.LineEndExclusive(start);
+        var end = Math.Clamp(start, 0, length);
+        for (var index = 0; index < Math.Max(1, count) && end < lineEnd; index++)
+        {
+            while (end < lineEnd && char.IsWhiteSpace(_editor.CharAt(end))) end++;
+            if (end >= lineEnd) break;
+            if (bigWord)
+            {
+                while (end < lineEnd && !char.IsWhiteSpace(_editor.CharAt(end))) end++;
+            }
+            else
+            {
+                var wordClass = ClassifySmallWord(_editor.CharAt(end));
+                while (end < lineEnd && ClassifySmallWord(_editor.CharAt(end)) == wordClass) end++;
+            }
+        }
+        return end;
+    }
+
+    private int FindPreviousWordStart(int start, bool bigWord, int count)
+    {
+        var lineStart = _editor.LineStart(start);
+        var position = Math.Clamp(start, lineStart, _editor.TextLength);
+        for (var index = 0; index < Math.Max(1, count) && position > lineStart; index++)
+        {
+            var cursor = position - 1;
+            while (cursor >= lineStart && char.IsWhiteSpace(_editor.CharAt(cursor))) cursor--;
+            if (cursor < lineStart) return lineStart;
+            if (bigWord)
+            {
+                while (cursor > lineStart && !char.IsWhiteSpace(_editor.CharAt(cursor - 1))) cursor--;
+            }
+            else
+            {
+                var wordClass = ClassifySmallWord(_editor.CharAt(cursor));
+                while (cursor > lineStart && ClassifySmallWord(_editor.CharAt(cursor - 1)) == wordClass) cursor--;
+            }
+            position = cursor;
+        }
+        return position;
+    }
+
+    private bool DeletePreviousWords(bool bigWord, int count)
+    {
+        if (_editor.TextLength == 0) return false;
+        var end = Math.Clamp(_editor.CaretPosition, 0, _editor.TextLength);
+        var start = FindPreviousWordStart(end, bigWord, count);
+        return DeleteIntoRegister(start, end);
+    }
+
+    private int FirstNonBlankPosition(int position)
+    {
+        var start = _editor.LineStart(position);
+        var end = _editor.LineEndExclusive(position);
+        while (start < end && _editor.CharAt(start) is ' ' or '\t') start++;
+        return start;
+    }
+
+    private bool DeleteToLineStart(bool firstNonBlank)
+    {
+        if (_editor.TextLength == 0) return false;
+        var end = Math.Clamp(_editor.CaretPosition, 0, _editor.TextLength);
+        var start = firstNonBlank ? FirstNonBlankPosition(end) : _editor.LineStart(end);
+        if (start > end) (start, end) = (end, start);
+        return DeleteIntoRegister(start, end);
+    }
+
+    private bool YankMotion(string motion, int count)
+    {
+        if (_editor.TextLength == 0) return false;
+        var caret = Math.Clamp(_editor.CaretPosition, 0, _editor.TextLength - 1);
+        int start;
+        int end;
+        switch (motion)
+        {
+            case "w":
+            case "W":
+                start = caret;
+                end = caret;
+                for (var index = 0; index < Math.Max(1, count); index++)
+                {
+                    var next = FindNextWordStart(end, motion == "W");
+                    if (next <= end) break;
+                    end = next;
+                }
+                end = Math.Min(end, _editor.LineEndExclusive(caret));
+                break;
+            case "e":
+            case "E":
+                start = caret;
+                end = FindWordEndExclusive(caret, motion == "E", count);
+                break;
+            case "b":
+            case "B":
+                end = caret;
+                start = FindPreviousWordStart(caret, motion == "B", count);
+                break;
+            case "0":
+                end = caret;
+                start = _editor.LineStart(caret);
+                break;
+            case "^":
+                end = caret;
+                start = FirstNonBlankPosition(caret);
+                if (start > end) (start, end) = (end, start);
+                break;
+            case "$":
+                start = caret;
+                end = _editor.LineEndExclusive(caret);
+                break;
+            default:
+                return false;
+        }
+
+        start = Math.Clamp(start, 0, _editor.TextLength);
+        end = Math.Clamp(end, start, _editor.TextLength);
+        if (end <= start) return true;
+        _registers.StoreText(null, _editor.GetTextRange(start, end - start), linewise: false);
+        return true;
     }
 
     private bool DeleteToLineEnd()

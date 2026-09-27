@@ -670,7 +670,7 @@ public sealed class MainForm : Form
         {
             return e.KeyCode switch
             {
-                Keys.C => "C", Keys.D => "D", Keys.E => "E", Keys.G => "G", Keys.J => "J", Keys.O => "O", Keys.P => "P", Keys.W => "W", Keys.B => "B", Keys.N => "N", Keys.D6 => "^", Keys.D4 => "$", _ => null
+                Keys.C => "C", Keys.D => "D", Keys.E => "E", Keys.G => "G", Keys.J => "J", Keys.O => "O", Keys.P => "P", Keys.W => "W", Keys.B => "B", Keys.N => "N", Keys.Y => "Y", Keys.D6 => "^", Keys.D4 => "$", _ => null
             };
         }
         if (e.KeyCode == Keys.OemQuestion) return "/";
