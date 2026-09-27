@@ -50,6 +50,11 @@ public interface IEditorAdapter
     void MoveCaret(int position);
     void DeleteRange(int position, int length);
     void InsertText(int position, string text);
+    void ReplaceRange(int position, int length, string text)
+    {
+        DeleteRange(position, length);
+        if (text.Length > 0) InsertText(position, text);
+    }
     void Undo();
     void Redo();
 

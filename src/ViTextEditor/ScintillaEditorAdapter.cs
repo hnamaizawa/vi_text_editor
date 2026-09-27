@@ -73,6 +73,26 @@ internal sealed class ScintillaEditorAdapter : IEditorAdapter
         _editor.AddText(text);
     }
 
+    public void ReplaceRange(int position, int length, string text)
+    {
+        position = Math.Clamp(position, 0, _editor.TextLength);
+        length = Math.Clamp(length, 0, _editor.TextLength - position);
+        _editor.BeginUndoAction();
+        try
+        {
+            _editor.DeleteRange(position, length);
+            if (text.Length > 0)
+            {
+                _editor.GotoPosition(position);
+                _editor.AddText(text);
+            }
+        }
+        finally
+        {
+            _editor.EndUndoAction();
+        }
+    }
+
     public void Undo() => _editor.Undo();
     public void Redo() => _editor.Redo();
 

@@ -306,6 +306,63 @@ public sealed class ViKeyProcessorTests
         Assert.Equal(6, editor.CaretPosition);
     }
 
+    [Theory]
+    [InlineData("one\ntwo", "one two")]
+    [InlineData("one\r\n    two", "one two")]
+    [InlineData("one \n\ttwo", "one two")]
+    [InlineData("\n    two", "two")]
+    [InlineData("one\n    ", "one")]
+    [InlineData("value\n    )", "value)")]
+    public void UppercaseJJoinsNextLineUsingVimSpacing(string source, string expected)
+    {
+        var (editor, vi) = Create(source);
+
+        Assert.True(vi.Handle("J"));
+
+        Assert.Equal(expected, editor.Text);
+        Assert.Equal(EditorMode.Normal, vi.Mode);
+    }
+
+    [Fact]
+    public void GUppercaseJRemovesOnlyLineBreakAndPreservesIndentation()
+    {
+        var (editor, vi) = Create("one\r\n    two");
+
+        vi.Handle("g");
+        Assert.True(vi.Handle("J"));
+
+        Assert.Equal("one    two", editor.Text);
+        Assert.Equal(3, editor.CaretPosition);
+    }
+
+    [Fact]
+    public void UppercaseJOnLastLineDoesNothingAndDotRepeatsSuccessfulJoin()
+    {
+        var (lastEditor, lastVi) = Create("one\ntwo", 4);
+        Assert.True(lastVi.Handle("J"));
+        Assert.Equal("one\ntwo", lastEditor.Text);
+
+        var (editor, vi) = Create("one\ntwo\nthree");
+        vi.Handle("J");
+        editor.MoveCaret(editor.Text.IndexOf("three", StringComparison.Ordinal));
+        vi.Handle("k");
+        vi.Handle(".");
+        Assert.Equal("one two three", editor.Text);
+    }
+
+    [Fact]
+    public void DotRepeatsGUppercaseJWithoutChangingHorizontalWhitespace()
+    {
+        var (editor, vi) = Create("one\n  two\n\tthree");
+
+        vi.Handle("g");
+        vi.Handle("J");
+        editor.MoveCaret(editor.Text.IndexOf("two", StringComparison.Ordinal));
+        vi.Handle(".");
+
+        Assert.Equal("one  two\tthree", editor.Text);
+    }
+
     [Fact]
     public void UndoAndRedoAreDelegated()
     {
