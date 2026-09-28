@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Markdig;
 using ViTextEditor.Core.Editor;
 
@@ -11,6 +12,7 @@ internal sealed class MarkdownPreviewControl : UserControl
     private readonly ToolStripLabel _statusLabel = new();
     private readonly TextBox _command = new();
     private readonly Func<string> _markdownProvider;
+    private readonly System.Windows.Forms.Timer _refreshTimer = new() { Interval = 150 };
     private readonly MarkdownPipeline _pipeline = new MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
     private readonly ViOptions _options = ViOptions.Shared;
     private IDisposable? _zoomFilter;
@@ -51,6 +53,13 @@ internal sealed class MarkdownPreviewControl : UserControl
         // such as Ctrl+F so the workspace can route them to vi page movement.
         _browser.WebBrowserShortcutsEnabled = false;
         _browser.DocumentCompleted += (_, _) => UpdateStatus();
+        _browser.Navigating += BrowserOnNavigating;
+
+        _refreshTimer.Tick += (_, _) =>
+        {
+            _refreshTimer.Stop();
+            RefreshPreview();
+        };
 
         Controls.Add(_browser);
         Controls.Add(_command);
@@ -70,6 +79,13 @@ internal sealed class MarkdownPreviewControl : UserControl
     }
 
     public void FocusViewer() => _browser.Focus();
+
+    public void QueueRefresh()
+    {
+        if (IsDisposed || Disposing) return;
+        _refreshTimer.Stop();
+        _refreshTimer.Start();
+    }
 
     public void CancelCommandInput()
     {
@@ -142,12 +158,29 @@ internal sealed class MarkdownPreviewControl : UserControl
     {
         if (disposing)
         {
+            _refreshTimer.Stop();
+            _refreshTimer.Dispose();
             _commandPrefixFilter?.Dispose();
             _commandPrefixFilter = null;
             _zoomFilter?.Dispose();
             _zoomFilter = null;
         }
         base.Dispose(disposing);
+    }
+
+    private void BrowserOnNavigating(object? sender, WebBrowserNavigatingEventArgs e)
+    {
+        if (e.Url.Scheme is not ("http" or "https")) return;
+
+        e.Cancel = true;
+        try
+        {
+            Process.Start(new ProcessStartInfo(e.Url.AbsoluteUri) { UseShellExecute = true });
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            MessageBox.Show(this, $"URLをブラウザで開けませんでした。\n{e.Url.AbsoluteUri}\n\n{ex.Message}", "vi_text_editor", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
     }
 
     private void ScrollBy(int pixels) => InvokeScript("viScrollBy", pixels);

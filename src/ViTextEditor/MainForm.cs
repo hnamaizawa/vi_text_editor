@@ -573,6 +573,8 @@ public sealed class MainForm : Form
     {
         if (_binaryMode) return;
 
+        if (TryInsertMarkdownListContinuation(e)) return;
+
         if (_referenceMode && e.Control && (e.KeyCode == Keys.Z || e.KeyCode == Keys.Y || e.KeyCode == Keys.R))
         {
             e.Handled = true;
@@ -620,6 +622,35 @@ public sealed class MainForm : Form
             e.Handled = true;
             e.SuppressKeyPress = true;
         }
+    }
+
+    private bool TryInsertMarkdownListContinuation(KeyEventArgs e)
+    {
+        if (e.KeyCode != Keys.Enter || e.Control || e.Alt || e.Shift ||
+            _referenceMode || _vi.Mode != EditorMode.Insert ||
+            SyntaxLanguageDetector.Detect(_filePath) != SyntaxLanguage.Markdown)
+        {
+            return false;
+        }
+
+        var lineNumber = _editor.LineFromPosition(_editor.CurrentPosition);
+        if (lineNumber < 0 || lineNumber >= _editor.Lines.Count) return false;
+        var lineText = _editor.Lines[lineNumber].Text.TrimEnd('\r', '\n');
+        if (!MarkdownListContinuation.TryCreatePrefix(lineText, out var prefix)) return false;
+
+        _editor.BeginUndoAction();
+        try
+        {
+            _editor.ReplaceSelection(_newLine + prefix);
+        }
+        finally
+        {
+            _editor.EndUndoAction();
+        }
+
+        e.Handled = true;
+        e.SuppressKeyPress = true;
+        return true;
     }
 
     private void EditorOnKeyPress(object? sender, KeyPressEventArgs e)
