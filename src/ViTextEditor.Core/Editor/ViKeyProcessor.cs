@@ -558,7 +558,7 @@ public sealed class ViKeyProcessor
         string? replacement = null;
         if (currentText.Length == 1 && char.IsAsciiLetter(currentText[0]))
         {
-            replacement = (char.IsAsciiUpper(currentText[0])
+            replacement = (char.IsUpper(currentText[0])
                 ? char.ToLowerInvariant(currentText[0])
                 : char.ToUpperInvariant(currentText[0])).ToString();
         }
