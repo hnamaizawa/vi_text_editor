@@ -1,6 +1,6 @@
 project:
   name: vi_text_editor
-  version: 0.1.34
+  version: 0.1.35
   platform: windows
   ui: winforms
   editor_component: Scintilla5.NET
@@ -58,6 +58,8 @@ non_negotiable_invariants:
   - r_must_replace_exactly_one_character_with_the_next_typed_character
   - replace_must_not_split_multibyte_utf8_characters_or_replace_line_breaks
   - tilde_must_toggle_ascii_letter_case_and_full_width_hiragana_katakana
+  - tilde_must_move_right_one_character_when_the_character_is_not_convertible
+  - tilde_must_not_cross_the_current_line_end
   - tilde_routing_must_use_the_actual_input_character_for_jis_shift_caret
   - standalone_caret_must_remain_first_nonblank_motion
   - dot_must_repeat_character_replace_and_tilde_toggle

@@ -494,6 +494,34 @@ public sealed class ViKeyProcessorTests
         Assert.Equal("Ab", editor.Text);
     }
 
+    [Theory]
+    [InlineData("漢字", 0, 1)]
+    [InlineData("1a", 0, 1)]
+    [InlineData("!a", 0, 1)]
+    [InlineData(" a", 0, 1)]
+    [InlineData("漢\n字", 0, 0)]
+    [InlineData("漢", 0, 0)]
+    public void TildeMovesRightWithoutChangingUnsupportedCharacters(string source, int caret, int expectedCaret)
+    {
+        var (editor, vi) = Create(source, caret);
+
+        Assert.True(vi.Handle("~"));
+
+        Assert.Equal(source, editor.Text);
+        Assert.Equal(expectedCaret, editor.CaretPosition);
+    }
+
+    [Fact]
+    public void UnsupportedTildeDoesNotReplacePreviousDotChange()
+    {
+        var (editor, vi) = Create("a漢B");
+        vi.Handle("~");
+        vi.Handle("~");
+        Assert.Equal(2, editor.CaretPosition);
+        vi.Handle(".");
+        Assert.Equal("A漢b", editor.Text);
+    }
+
     [Fact]
     public void CaretStillMovesToFirstNonBlankCharacter()
     {

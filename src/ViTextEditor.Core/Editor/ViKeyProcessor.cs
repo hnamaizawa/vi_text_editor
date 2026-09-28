@@ -567,10 +567,15 @@ public sealed class ViKeyProcessor
             replacement = convertedKana.ToString();
         }
 
-        if (replacement is null) return false;
+        var lineEnd = _editor.LineEndExclusive(position);
         var next = _editor.NextCharacterPosition(position);
+        if (replacement is null)
+        {
+            _editor.MoveCaret(next < lineEnd ? next : position);
+            return false;
+        }
         _editor.ReplaceRange(position, next - position, replacement);
-        _editor.MoveCaret(next < _editor.TextLength ? next : position);
+        _editor.MoveCaret(next < lineEnd ? next : position);
         return true;
     }
 
