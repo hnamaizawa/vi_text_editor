@@ -2,7 +2,7 @@
 
 Windows向けの軽量テキストエディターです。EmEditor／サクラエディタに近いGUIとファイル操作を持ち、基本操作はvi/Vim系キーバインドで行います。
 
-現在のアプリ版は **v0.1.35** です。
+現在のアプリ版は **v0.1.36** です。
 
 ## 主な特徴
 
@@ -36,6 +36,13 @@ Windows向けの軽量テキストエディターです。EmEditor／サクラ�
 10. AIがLatest ReleaseにSingle-file EXE / Portable ZIPが公開されたことを確認する
 
 ## 変更履歴
+
+### v0.1.36
+
+- Markdown Viewer内の `http://` / `https://` リンクをクリックすると、Viewer内ではなくWindowsの既定Webブラウザで開くよう改善
+- `.md` / `.markdown` のINSERTモードで、行頭が `- ` の行を改行すると、元のインデントから2文字下げて `- ` を自動挿入
+- Markdown編集内容を150ミリ秒のデバウンス後にViewerへリアルタイム反映し、連続入力中の過剰な再描画を抑制
+- Markdown箇条書きの自動継続について、インデント、タブ、非箇条書き行をCore単体テストで検証
 
 ### v0.1.35
 
@@ -449,7 +456,7 @@ NORMALモードで `:` を押すと画面下部のCOMMAND入力欄へ移りま�
 
 ## Markdownプレビュー
 
-`Ctrl+Shift+M` または `ツール > Markdownプレビュー` で別タブに表示します。元のMarkdown本文は変更しません。
+`Ctrl+Shift+M` または `ツール > Markdownプレビュー` で別タブに表示します。元のMarkdown本文は変更せず、編集内容はViewerへリアルタイムに反映されます。Viewer内のリンクはWindowsの既定Webブラウザで開きます。
 
 Viewerでも基本操作をviに統一しています。
 
