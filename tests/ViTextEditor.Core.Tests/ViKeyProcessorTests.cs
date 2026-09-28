@@ -426,6 +426,83 @@ public sealed class ViKeyProcessorTests
         Assert.Equal("abc", editor.Text);
     }
 
+    [Theory]
+    [InlineData("abc", 0, "x", "xbc")]
+    [InlineData("日本語", 1, "文", "日文語")]
+    [InlineData("かな", 0, "カ", "カな")]
+    public void RReplacesExactlyOneCharacterAtCaret(string source, int caret, string replacement, string expected)
+    {
+        var (editor, vi) = Create(source, caret);
+
+        Assert.True(vi.Handle("r"));
+        Assert.True(vi.IsAwaitingReplaceCharacter);
+        Assert.True(vi.Handle(replacement));
+
+        Assert.Equal(expected, editor.Text);
+        Assert.Equal(caret, editor.CaretPosition);
+        Assert.False(vi.IsAwaitingReplaceCharacter);
+    }
+
+    [Fact]
+    public void RCanBeCancelledAndDoesNotReplaceLineBreak()
+    {
+        var (cancelEditor, cancelVi) = Create("abc");
+        cancelVi.Handle("r");
+        cancelVi.Handle("Esc");
+        cancelVi.Handle("x");
+        Assert.Equal("bc", cancelEditor.Text);
+
+        var (newlineEditor, newlineVi) = Create("a\nb", 1);
+        newlineVi.Handle("r");
+        newlineVi.Handle("x");
+        Assert.Equal("a\nb", newlineEditor.Text);
+    }
+
+    [Fact]
+    public void DotRepeatsLastCharacterReplacement()
+    {
+        var (editor, vi) = Create("abc");
+        vi.Handle("r");
+        vi.Handle("x");
+        vi.Handle("l");
+        vi.Handle(".");
+        Assert.Equal("xxc", editor.Text);
+    }
+
+    [Theory]
+    [InlineData("a", "A")]
+    [InlineData("Z", "z")]
+    [InlineData("か", "カ")]
+    [InlineData("ガ", "が")]
+    [InlineData("ゔ", "ヴ")]
+    [InlineData("ヾ", "ゞ")]
+    public void TildeTogglesAsciiCaseAndFullWidthKana(string source, string expected)
+    {
+        var (editor, vi) = Create(source);
+        Assert.True(vi.Handle("~"));
+        Assert.Equal(expected, editor.Text);
+        Assert.Equal(0, editor.CaretPosition);
+    }
+
+    [Fact]
+    public void TildeMovesRightAndDotRepeatsCaseToggle()
+    {
+        var (editor, vi) = Create("aB");
+        vi.Handle("~");
+        Assert.Equal(1, editor.CaretPosition);
+        vi.Handle(".");
+        Assert.Equal("Ab", editor.Text);
+    }
+
+    [Fact]
+    public void CaretStillMovesToFirstNonBlankCharacter()
+    {
+        var (editor, vi) = Create("   abc", 5);
+        vi.Handle("^");
+        Assert.Equal(3, editor.CaretPosition);
+        Assert.Equal("   abc", editor.Text);
+    }
+
     [Fact]
     public void JAndKPreserveColumnWherePossible()
     {

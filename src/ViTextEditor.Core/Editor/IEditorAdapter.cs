@@ -13,6 +13,17 @@ public interface IEditorAdapter
     int CaretPosition { get; }
     int TextLength => Text.Length;
 
+    int NextCharacterPosition(int position) => Math.Min(TextLength, Math.Max(0, position) + 1);
+
+    string CharacterAt(int position)
+    {
+        var text = Text;
+        if (position < 0 || position >= text.Length) return string.Empty;
+        return char.IsHighSurrogate(text[position]) && position + 1 < text.Length && char.IsLowSurrogate(text[position + 1])
+            ? text.Substring(position, 2)
+            : text[position].ToString();
+    }
+
     char CharAt(int position)
     {
         var text = Text;
