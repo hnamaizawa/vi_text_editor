@@ -591,7 +591,7 @@ public sealed class MainForm : Form
             return;
         }
 
-        if (_vi.Mode == EditorMode.Normal && token is ":" or "/" or "?")
+        if (_vi.Mode == EditorMode.Normal && !_vi.HasPendingCommand && token is ":" or "/" or "?")
         {
             BeginCommandInput(token[0]);
             e.Handled = true;
@@ -599,7 +599,7 @@ public sealed class MainForm : Form
             return;
         }
 
-        if (_vi.Mode == EditorMode.Normal && token is "n" or "N")
+        if (_vi.Mode == EditorMode.Normal && !_vi.HasPendingCommand && token is "n" or "N")
         {
             _search.Repeat(reverseDirection: token == "N");
             _editor.ScrollCaret();
@@ -626,9 +626,18 @@ public sealed class MainForm : Form
     {
         if (_binaryMode || _vi.Mode != EditorMode.Normal || _commandLine.Visible) return;
 
+        if (_vi.IsAwaitingReplaceCharacter)
+        {
+            if (!_referenceMode) _vi.Handle(e.KeyChar.ToString());
+            else _vi.Handle("Esc");
+            e.Handled = true;
+            return;
+        }
+
         var token = e.KeyChar switch
         {
             '^' => "^",
+            '~' => "~",
             ':' => ":",
             '/' => "/",
             '?' => "?",
@@ -643,9 +652,9 @@ public sealed class MainForm : Form
             return;
         }
 
-        if (token is "^" or ".")
+        if (token is "^" or "~" or ".")
         {
-            if (!_referenceMode || token != ".") _vi.Handle(token);
+            if (!_referenceMode || token == "^") _vi.Handle(token);
             e.Handled = true;
             return;
         }
@@ -653,7 +662,7 @@ public sealed class MainForm : Form
         if (!char.IsControl(e.KeyChar)) e.Handled = true;
     }
 
-    private static bool IsMutatingViToken(string token) => token is "i" or "a" or "o" or "O" or "x" or "d" or "D" or "c" or "C" or "J" or "p" or "P" or "." or "u" or "Ctrl+r";
+    private static bool IsMutatingViToken(string token) => token is "i" or "a" or "o" or "O" or "x" or "d" or "D" or "c" or "C" or "r" or "~" or "J" or "p" or "P" or "." or "u" or "Ctrl+r";
 
     private static string? ToViToken(KeyEventArgs e)
     {
@@ -680,7 +689,7 @@ public sealed class MainForm : Form
         return e.KeyCode switch
         {
             Keys.I => "i", Keys.A => "a", Keys.O => "o", Keys.H => "h", Keys.J => "j", Keys.K => "k", Keys.L => "l",
-            Keys.W => "w", Keys.B => "b", Keys.C => "c", Keys.E => "e", Keys.G => "g", Keys.D => "d", Keys.Y => "y", Keys.X => "x",
+            Keys.W => "w", Keys.B => "b", Keys.C => "c", Keys.E => "e", Keys.G => "g", Keys.D => "d", Keys.R => "r", Keys.Y => "y", Keys.X => "x",
             Keys.P => "p", Keys.U => "u", Keys.N => "n", Keys.D0 => "0", _ => null
         };
     }

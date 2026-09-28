@@ -1,6 +1,6 @@
 project:
   name: vi_text_editor
-  version: 0.1.33
+  version: 0.1.34
   platform: windows
   ui: winforms
   editor_component: Scintilla5.NET
@@ -55,6 +55,12 @@ non_negotiable_invariants:
   - uppercase_J_must_join_the_current_line_with_the_next_line_using_vim_spacing
   - g_uppercase_J_must_join_lines_without_adding_or_removing_horizontal_whitespace
   - dot_must_repeat_the_last_successful_line_join
+  - r_must_replace_exactly_one_character_with_the_next_typed_character
+  - replace_must_not_split_multibyte_utf8_characters_or_replace_line_breaks
+  - tilde_must_toggle_ascii_letter_case_and_full_width_hiragana_katakana
+  - tilde_routing_must_use_the_actual_input_character_for_jis_shift_caret
+  - standalone_caret_must_remain_first_nonblank_motion
+  - dot_must_repeat_character_replace_and_tilde_toggle
   - insert_repeat_must_preserve_ime_committed_text_and_backspace_edits
   - ctrl_f_and_ctrl_b_must_move_one_page_with_caret_following
   - ctrl_d_and_ctrl_u_must_move_half_page_with_caret_following

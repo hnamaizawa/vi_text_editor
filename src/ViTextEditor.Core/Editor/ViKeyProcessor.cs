@@ -19,6 +19,7 @@ public sealed class ViKeyProcessor
     public bool HasPendingCommand => _pending is not null;
     public bool IsRepeating => _isRepeating;
     public bool IsCapturingInsertRepeat => _pendingInsertRepeat is not null && !_isRepeating;
+    public bool IsAwaitingReplaceCharacter => _pending == "r";
 
     public event EventHandler? ModeChanged;
 
@@ -133,6 +134,9 @@ public sealed class ViKeyProcessor
             case "^":
                 MoveFirstNonWhitespace();
                 return true;
+            case "~":
+                if (ToggleCaseOrKana()) RecordRepeat(["~"]);
+                return true;
             case "$":
                 MoveLineEnd();
                 return true;
@@ -159,6 +163,7 @@ public sealed class ViKeyProcessor
             case "d":
             case "y":
             case "c":
+            case "r":
                 _pending = key;
                 return true;
             case "x":
@@ -183,6 +188,12 @@ public sealed class ViKeyProcessor
 
     private bool HandlePending(string pending, string key)
     {
+        if (pending == "r")
+        {
+            if (ReplaceCharacter(key)) RecordRepeat(["r", key]);
+            return true;
+        }
+
         if (pending == "g" && key == "g")
         {
             _editor.MoveCaret(0);
@@ -520,6 +531,63 @@ public sealed class ViKeyProcessor
         var i = start;
         while (i < end && char.IsWhiteSpace(_editor.CharAt(i))) i++;
         _editor.MoveCaret(i < end ? i : start);
+    }
+
+    private bool ReplaceCharacter(string replacement)
+    {
+        var isSingleCharacter = replacement.Length == 1 ||
+                                replacement.Length == 2 && char.IsSurrogatePair(replacement[0], replacement[1]);
+        if (!isSingleCharacter || replacement.Any(char.IsControl) || _editor.TextLength == 0) return false;
+        var position = Math.Clamp(_editor.CaretPosition, 0, _editor.TextLength - 1);
+        if (_editor.CharAt(position) is '\r' or '\n') return false;
+        var next = _editor.NextCharacterPosition(position);
+        if (next <= position) return false;
+        _registers.StoreText(null, _editor.GetTextRange(position, next - position), linewise: false);
+        _editor.ReplaceRange(position, next - position, replacement);
+        _editor.MoveCaret(position);
+        return true;
+    }
+
+    private bool ToggleCaseOrKana()
+    {
+        if (_editor.TextLength == 0) return false;
+        var position = Math.Clamp(_editor.CaretPosition, 0, _editor.TextLength - 1);
+        var currentText = _editor.CharacterAt(position);
+        if (currentText.Length == 0) return false;
+
+        string? replacement = null;
+        if (currentText.Length == 1 && char.IsAsciiLetter(currentText[0]))
+        {
+            replacement = (char.IsAsciiUpper(currentText[0])
+                ? char.ToLowerInvariant(currentText[0])
+                : char.ToUpperInvariant(currentText[0])).ToString();
+        }
+        else if (currentText.Length == 1 && TryToggleKana(currentText[0], out var convertedKana))
+        {
+            replacement = convertedKana.ToString();
+        }
+
+        if (replacement is null) return false;
+        var next = _editor.NextCharacterPosition(position);
+        _editor.ReplaceRange(position, next - position, replacement);
+        _editor.MoveCaret(next < _editor.TextLength ? next : position);
+        return true;
+    }
+
+    private static bool TryToggleKana(char value, out char converted)
+    {
+        if (value is >= '\u3041' and <= '\u3096' or >= '\u309D' and <= '\u309F')
+        {
+            converted = (char)(value + 0x60);
+            return true;
+        }
+        if (value is >= '\u30A1' and <= '\u30F6' or >= '\u30FD' and <= '\u30FF')
+        {
+            converted = (char)(value - 0x60);
+            return true;
+        }
+        converted = value;
+        return false;
     }
 
     private void MoveLineEnd()
