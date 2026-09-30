@@ -196,6 +196,9 @@ public sealed class MainForm : Form
         _editor.Styles[Style.Default].SizeF = 11f;
         _editor.StyleClearAll();
         _editor.CaretWidth = 3;
+        _editor.TabWidth = 2;
+        _editor.IndentWidth = 2;
+        _editor.UseTabs = false;
 
         _editor.BufferedDraw = false;
         _editor.DirectMessage(SciSetLayoutCache, new IntPtr(ScCachePage));
