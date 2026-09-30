@@ -9,7 +9,6 @@ public sealed class MarkdownListContinuationTests
     [InlineData("- item", "  - ")]
     [InlineData("  - item", "    - ")]
     [InlineData("\t- item", "\t  - ")]
-    [InlineData("-", "  - ")]
     public void TryCreatePrefix_IndentsNestedBulletByTwoCharacters(string line, string expected)
     {
         Assert.True(MarkdownListContinuation.TryCreatePrefix(line, out var prefix));
@@ -20,6 +19,10 @@ public sealed class MarkdownListContinuationTests
     [InlineData("plain text")]
     [InlineData("heading - item")]
     [InlineData("-not-a-list")]
+    [InlineData("-")]
+    [InlineData("- ")]
+    [InlineData("  -   ")]
+    [InlineData("\t-\t")]
     [InlineData("")]
     public void TryCreatePrefix_IgnoresNonListLines(string line)
     {
