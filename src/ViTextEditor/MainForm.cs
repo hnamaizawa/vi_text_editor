@@ -25,6 +25,7 @@ public sealed class MainForm : Form
     private const int IndicPlain = 0;
     private const int IndicCompositionThick = 14;
     private const int IndicTextFore = 17;
+    private const int UnderscoreBaseIndicator = 28;
     private const int UnderscoreIndicator = 29;
     private const int UrlTextIndicator = 30;
     private const int UrlUnderlineIndicator = 31;
@@ -198,6 +199,7 @@ public sealed class MainForm : Form
         _editor.Styles[Style.Default].SizeF = 11f;
         _editor.StyleClearAll();
         _editor.CaretWidth = 3;
+        _editor.ExtraDescent = 2;
         _editor.TabWidth = 2;
         _editor.IndentWidth = 2;
         _editor.UseTabs = false;
@@ -214,8 +216,11 @@ public sealed class MainForm : Form
         _editor.DirectMessage(SciIndicSetFore, new IntPtr(UrlTextIndicator), new IntPtr(linkBlue));
         _editor.DirectMessage(SciIndicSetStyle, new IntPtr(UrlUnderlineIndicator), new IntPtr(IndicPlain));
         _editor.DirectMessage(SciIndicSetFore, new IntPtr(UrlUnderlineIndicator), new IntPtr(linkBlue));
+        var underscoreColor = ColorTranslator.ToWin32(SystemColors.WindowText);
+        _editor.DirectMessage(SciIndicSetStyle, new IntPtr(UnderscoreBaseIndicator), new IntPtr(IndicPlain));
+        _editor.DirectMessage(SciIndicSetFore, new IntPtr(UnderscoreBaseIndicator), new IntPtr(underscoreColor));
         _editor.DirectMessage(SciIndicSetStyle, new IntPtr(UnderscoreIndicator), new IntPtr(IndicCompositionThick));
-        _editor.DirectMessage(SciIndicSetFore, new IntPtr(UnderscoreIndicator), new IntPtr(ColorTranslator.ToWin32(SystemColors.WindowText)));
+        _editor.DirectMessage(SciIndicSetFore, new IntPtr(UnderscoreIndicator), new IntPtr(underscoreColor));
     }
 
     private void ConfigureCommandLine()
@@ -471,6 +476,7 @@ public sealed class MainForm : Form
         var documentByteLength = _editor.DirectMessage(SciGetLength).ToInt32();
         ClearUrlIndicator(UrlTextIndicator, 0, documentByteLength);
         ClearUrlIndicator(UrlUnderlineIndicator, 0, documentByteLength);
+        ClearUrlIndicator(UnderscoreBaseIndicator, 0, documentByteLength);
         ClearUrlIndicator(UnderscoreIndicator, 0, documentByteLength);
         for (var lineNumber = 0; lineNumber < _editor.Lines.Count; lineNumber++)
         {
@@ -486,6 +492,7 @@ public sealed class MainForm : Form
         var nativeLineLength = _editor.DirectMessage(SciLineLength, new IntPtr(lineNumber)).ToInt32();
         ClearUrlIndicator(UrlTextIndicator, nativeLineStart, nativeLineLength);
         ClearUrlIndicator(UrlUnderlineIndicator, nativeLineStart, nativeLineLength);
+        ClearUrlIndicator(UnderscoreBaseIndicator, nativeLineStart, nativeLineLength);
         ClearUrlIndicator(UnderscoreIndicator, nativeLineStart, nativeLineLength);
         FillUrlIndicatorsForLine(lineNumber);
         FillUnderscoreIndicatorsForLine(lineNumber);
@@ -520,6 +527,7 @@ public sealed class MainForm : Form
 
             var nativeStart = PositionFromUtf16Offset(nativeLineStart, characterIndex);
             var nativeEnd = PositionFromUtf16Offset(nativeStart, 1);
+            FillUrlIndicator(UnderscoreBaseIndicator, nativeStart, nativeEnd - nativeStart);
             FillUrlIndicator(UnderscoreIndicator, nativeStart, nativeEnd - nativeStart);
         }
     }
@@ -584,6 +592,10 @@ public sealed class MainForm : Form
                 SciIndicatorValueAt,
                 new IntPtr(UnderscoreIndicator),
                 new IntPtr(nativePosition)).ToInt32() != 0;
+            var underscoreBaseEmphasized = _editor.DirectMessage(
+                SciIndicatorValueAt,
+                new IntPtr(UnderscoreBaseIndicator),
+                new IntPtr(nativePosition)).ToInt32() != 0;
             if (textStyled != expected[nativePosition])
             {
                 diagnostic = $"Text indicator mismatch at native position {nativePosition}: expected={expected[nativePosition]}, actual={textStyled}.";
@@ -598,6 +610,11 @@ public sealed class MainForm : Form
             {
                 diagnostic = $"Underscore indicator mismatch at native position {nativePosition}: expected={nativePosition == underscoreNativePosition}, actual={underscoreEmphasized}.";
                 return 6000 + nativePosition;
+            }
+            if (underscoreBaseEmphasized != (nativePosition == underscoreNativePosition))
+            {
+                diagnostic = $"Underscore base indicator mismatch at native position {nativePosition}: expected={nativePosition == underscoreNativePosition}, actual={underscoreBaseEmphasized}.";
+                return 7000 + nativePosition;
             }
         }
         diagnostic = "PASS";
