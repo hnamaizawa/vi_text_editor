@@ -22,6 +22,7 @@ public sealed class MainForm : Form
     private const int SciIndicatorValueAt = 2507;
     private const int SciIndicatorFillRange = 2504;
     private const int SciIndicatorClearRange = 2505;
+    private const int SciGetZoom = 2374;
     private const int IndicPlain = 0;
     private const int IndicCompositionThick = 14;
     private const int IndicTextFore = 17;
@@ -37,6 +38,7 @@ public sealed class MainForm : Form
     private readonly TextBox _commandLine = new();
     private readonly ToolStripStatusLabel _modeLabel = new();
     private readonly ToolStripStatusLabel _accessLabel = new();
+    private readonly ToolStripStatusLabel _fontSizeLabel = new();
     private readonly ToolStripStatusLabel _encodingLabel = new();
     private readonly ToolStripStatusLabel _eolLabel = new();
     private readonly ToolStripStatusLabel _positionLabel = new();
@@ -303,9 +305,11 @@ public sealed class MainForm : Form
         _modeLabel.Width = 120;
         _accessLabel.AutoSize = false;
         _accessLabel.Width = 90;
+        _fontSizeLabel.AutoSize = false;
+        _fontSizeLabel.Width = 100;
         _encodingLabel.Spring = true;
         _encodingLabel.TextAlign = ContentAlignment.MiddleRight;
-        status.Items.AddRange([_modeLabel, _accessLabel, _encodingLabel, _eolLabel, _positionLabel]);
+        status.Items.AddRange([_modeLabel, _accessLabel, _fontSizeLabel, _encodingLabel, _eolLabel, _positionLabel]);
         return status;
     }
 
@@ -1335,6 +1339,7 @@ public sealed class MainForm : Form
                 ? _commandPrefix == ':' ? "BINARY COMMAND" : "BINARY SEARCH"
                 : "BINARY";
             _accessLabel.Text = "参照";
+            _fontSizeLabel.Text = string.Empty;
             _encodingLabel.Text = $"RAW bytes{ignoreCaseSuffix}";
             _eolLabel.Text = string.Empty;
             _positionLabel.Text = _binaryViewer.StatusText;
@@ -1345,6 +1350,9 @@ public sealed class MainForm : Form
             ? "COMMAND"
             : _vi is null || _vi.Mode == EditorMode.Normal ? "NORMAL" : "INSERT";
         _accessLabel.Text = _referenceMode ? "参照" : "編集";
+        var zoomPoints = _editor.DirectMessage(SciGetZoom, IntPtr.Zero).ToInt32();
+        var fontSize = Math.Max(1f, _editor.Styles[Style.Default].SizeF + zoomPoints);
+        _fontSizeLabel.Text = $"フォント {fontSize:0.#}pt";
         _encodingLabel.Text = _encoding.WebName + ignoreCaseSuffix;
         _eolLabel.Text = _newLine switch { "\r\n" => "CRLF", "\n" => "LF", "\r" => "CR", _ => "EOL" };
 
@@ -1353,6 +1361,8 @@ public sealed class MainForm : Form
         var column = _editor.GetColumn(position) + 1;
         _positionLabel.Text = $"Ln {line}, Col {column}";
     }
+
+    internal void RefreshStatus() => UpdateStatus();
 
     private void ShowKeyBindings()
     {

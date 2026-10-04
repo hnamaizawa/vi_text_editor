@@ -86,18 +86,21 @@ internal static class SmoothEditorZoom
     private const int SciGetFirstVisibleLine = 2152;
     private const int SciLineScroll = 2168;
 
-    public static IDisposable Attach(Scintilla editor)
+    public static IDisposable Attach(Scintilla editor, Action? zoomChanged = null)
     {
-        return SmoothWheelZoomFilter.Attach(editor, steps => Apply(editor, steps));
+        return SmoothWheelZoomFilter.Attach(editor, steps =>
+        {
+            if (Apply(editor, steps)) zoomChanged?.Invoke();
+        });
     }
 
-    private static void Apply(Scintilla editor, int steps)
+    private static bool Apply(Scintilla editor, int steps)
     {
-        if (editor.IsDisposed || steps == 0) return;
+        if (editor.IsDisposed || steps == 0) return false;
 
         var current = editor.DirectMessage(SciGetZoom, IntPtr.Zero).ToInt32();
         var target = Math.Clamp(current + steps, -10, 20);
-        if (target == current) return;
+        if (target == current) return false;
 
         // Keep the same top document line anchored while the font size changes.
         // This avoids the visible vertical oscillation of repeated native zoom events.
@@ -117,5 +120,6 @@ internal static class SmoothEditorZoom
             editor.ResumeLayout(false);
             editor.Invalidate();
         }
+        return true;
     }
 }
