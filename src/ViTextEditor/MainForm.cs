@@ -23,7 +23,9 @@ public sealed class MainForm : Form
     private const int SciIndicatorFillRange = 2504;
     private const int SciIndicatorClearRange = 2505;
     private const int IndicPlain = 0;
+    private const int IndicCompositionThick = 14;
     private const int IndicTextFore = 17;
+    private const int UnderscoreIndicator = 29;
     private const int UrlTextIndicator = 30;
     private const int UrlUnderlineIndicator = 31;
     private const int ScCachePage = 2;
@@ -212,6 +214,8 @@ public sealed class MainForm : Form
         _editor.DirectMessage(SciIndicSetFore, new IntPtr(UrlTextIndicator), new IntPtr(linkBlue));
         _editor.DirectMessage(SciIndicSetStyle, new IntPtr(UrlUnderlineIndicator), new IntPtr(IndicPlain));
         _editor.DirectMessage(SciIndicSetFore, new IntPtr(UrlUnderlineIndicator), new IntPtr(linkBlue));
+        _editor.DirectMessage(SciIndicSetStyle, new IntPtr(UnderscoreIndicator), new IntPtr(IndicCompositionThick));
+        _editor.DirectMessage(SciIndicSetFore, new IntPtr(UnderscoreIndicator), new IntPtr(ColorTranslator.ToWin32(SystemColors.WindowText)));
     }
 
     private void ConfigureCommandLine()
@@ -467,9 +471,11 @@ public sealed class MainForm : Form
         var documentByteLength = _editor.DirectMessage(SciGetLength).ToInt32();
         ClearUrlIndicator(UrlTextIndicator, 0, documentByteLength);
         ClearUrlIndicator(UrlUnderlineIndicator, 0, documentByteLength);
+        ClearUrlIndicator(UnderscoreIndicator, 0, documentByteLength);
         for (var lineNumber = 0; lineNumber < _editor.Lines.Count; lineNumber++)
         {
             FillUrlIndicatorsForLine(lineNumber);
+            FillUnderscoreIndicatorsForLine(lineNumber);
         }
     }
 
@@ -480,7 +486,9 @@ public sealed class MainForm : Form
         var nativeLineLength = _editor.DirectMessage(SciLineLength, new IntPtr(lineNumber)).ToInt32();
         ClearUrlIndicator(UrlTextIndicator, nativeLineStart, nativeLineLength);
         ClearUrlIndicator(UrlUnderlineIndicator, nativeLineStart, nativeLineLength);
+        ClearUrlIndicator(UnderscoreIndicator, nativeLineStart, nativeLineLength);
         FillUrlIndicatorsForLine(lineNumber);
+        FillUnderscoreIndicatorsForLine(lineNumber);
     }
 
     private void FillUrlIndicatorsForLine(int lineNumber)
@@ -499,6 +507,20 @@ public sealed class MainForm : Form
             var nativeLength = nativeEnd - nativeStart;
             FillUrlIndicator(UrlTextIndicator, nativeStart, nativeLength);
             FillUrlIndicator(UrlUnderlineIndicator, nativeStart, nativeLength);
+        }
+    }
+
+    private void FillUnderscoreIndicatorsForLine(int lineNumber)
+    {
+        var lineText = _editor.Lines[lineNumber].Text;
+        var nativeLineStart = NativePositionFromLine(lineNumber);
+        for (var characterIndex = 0; characterIndex < lineText.Length; characterIndex++)
+        {
+            if (lineText[characterIndex] != '_') continue;
+
+            var nativeStart = PositionFromUtf16Offset(nativeLineStart, characterIndex);
+            var nativeEnd = PositionFromUtf16Offset(nativeStart, 1);
+            FillUrlIndicator(UnderscoreIndicator, nativeStart, nativeEnd - nativeStart);
         }
     }
 
@@ -527,7 +549,7 @@ public sealed class MainForm : Form
     {
         const string firstUrl = "https://example.com/a/b";
         const string secondUrl = "https://uipath.com/path?q=test";
-        var sample = $"日本語の見出し\r\n- [UiBank]({firstUrl})（UiPath の説明）\r\n次の行\r\n  - {secondUrl}\r\n末尾";
+        var sample = $"日本語の見出し\r\n- [UiBank]({firstUrl})（UiPath の説明）\r\naa_aaa\r\n  - {secondUrl}\r\n末尾";
         LoadTextIntoEditor(sample);
         SyntaxHighlightingService.Apply(_editor, "url-indicator-smoke.md");
 
@@ -546,6 +568,7 @@ public sealed class MainForm : Form
             var nativeLength = Encoding.UTF8.GetByteCount(url);
             Array.Fill(expected, true, nativeStart, nativeLength);
         }
+        var underscoreNativePosition = Encoding.UTF8.GetByteCount(sample.AsSpan(0, sample.IndexOf('_')));
 
         for (var nativePosition = 0; nativePosition < documentByteLength; nativePosition++)
         {
@@ -557,6 +580,10 @@ public sealed class MainForm : Form
                 SciIndicatorValueAt,
                 new IntPtr(UrlUnderlineIndicator),
                 new IntPtr(nativePosition)).ToInt32() != 0;
+            var underscoreEmphasized = _editor.DirectMessage(
+                SciIndicatorValueAt,
+                new IntPtr(UnderscoreIndicator),
+                new IntPtr(nativePosition)).ToInt32() != 0;
             if (textStyled != expected[nativePosition])
             {
                 diagnostic = $"Text indicator mismatch at native position {nativePosition}: expected={expected[nativePosition]}, actual={textStyled}.";
@@ -566,6 +593,11 @@ public sealed class MainForm : Form
             {
                 diagnostic = $"Underline indicator mismatch at native position {nativePosition}: expected={expected[nativePosition]}, actual={underlined}.";
                 return (expected[nativePosition] ? 4000 : 3000) + nativePosition;
+            }
+            if (underscoreEmphasized != (nativePosition == underscoreNativePosition))
+            {
+                diagnostic = $"Underscore indicator mismatch at native position {nativePosition}: expected={nativePosition == underscoreNativePosition}, actual={underscoreEmphasized}.";
+                return 6000 + nativePosition;
             }
         }
         diagnostic = "PASS";
