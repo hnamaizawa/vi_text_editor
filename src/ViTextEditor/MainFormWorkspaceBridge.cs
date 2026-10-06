@@ -49,6 +49,7 @@ internal static class MainFormWorkspaceBridge
         InstallFileMenu(form, workspace, menu);
         InstallTabMenu(workspace, menu);
         InstallToolsMenu(form, workspace, menu);
+        InstallSettingsMenu(workspace, menu);
         InstallHelpVersion(menu);
         InstallViMotionPreview(form);
         InstallCoordinateUpdater(form, workspace);
@@ -116,6 +117,18 @@ internal static class MainFormWorkspaceBridge
         tools.DropDownItems.Add(new ToolStripMenuItem("Markdownプレビュー(&M)", null, (_, _) => workspace.OpenMarkdownPreview(form), Keys.Control | Keys.Shift | Keys.M));
         var helpIndex = menu.Items.OfType<ToolStripMenuItem>().Select((item, index) => (item, index)).FirstOrDefault(x => x.item.Text.Contains("ヘルプ", StringComparison.Ordinal)).index;
         menu.Items.Insert(helpIndex > 0 ? helpIndex : Math.Max(0, menu.Items.Count - 1), tools);
+    }
+
+    private static void InstallSettingsMenu(EditorWorkspaceForm workspace, MenuStrip menu)
+    {
+        if (menu.Items.OfType<ToolStripMenuItem>().Any(item => item.Text.Contains("設定", StringComparison.Ordinal))) return;
+
+        var settings = new ToolStripMenuItem("設定(&S)");
+        settings.DropDownItems.Add(new ToolStripMenuItem("一般設定(&G)...", null, (_, _) => workspace.ShowSettingsDialog()));
+        var helpIndex = menu.Items.OfType<ToolStripMenuItem>()
+            .Select((item, index) => (item, index))
+            .FirstOrDefault(x => x.item.Text.Contains("ヘルプ", StringComparison.Ordinal)).index;
+        menu.Items.Insert(helpIndex > 0 ? helpIndex : Math.Max(0, menu.Items.Count - 1), settings);
     }
 
     private static void FormatJson(MainForm form)

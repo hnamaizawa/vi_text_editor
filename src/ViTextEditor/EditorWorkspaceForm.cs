@@ -5,15 +5,20 @@ namespace ViTextEditor;
 internal sealed class EditorWorkspaceForm : Form
 {
     private readonly TabControl _tabs = new();
-    private readonly RecentFileStore _recentFiles = new();
+    private readonly EditorSettingsStore _settingsStore;
+    private readonly RecentFileStore _recentFiles;
     private readonly Dictionary<TabPage, WorkspaceTab> _sessions = new();
     private readonly HashSet<MainForm> _deferredClosePass = [];
     private bool _closingWorkspace;
     private TabPage? _draggedTab;
     private Point _tabDragStart;
+    private EditorSettings _settings;
 
     public EditorWorkspaceForm(IEnumerable<string>? startupPaths = null)
     {
+        _settingsStore = new EditorSettingsStore();
+        _settings = _settingsStore.Load();
+        _recentFiles = new RecentFileStore(_settings.RecentFileLimit);
         Text = "vi_text_editor";
         Width = 1180;
         Height = 820;
@@ -47,6 +52,47 @@ internal sealed class EditorWorkspaceForm : Form
     }
 
     public RecentFileStore RecentFiles => _recentFiles;
+
+    public void ShowSettingsDialog()
+    {
+        using var dialog = new Form
+        {
+            Text = "設定",
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            StartPosition = FormStartPosition.CenterParent,
+            MinimizeBox = false,
+            MaximizeBox = false,
+            ShowInTaskbar = false,
+            ClientSize = new Size(410, 155)
+        };
+        var recentLabel = new Label { Text = "最近使ったファイルの表示件数:", AutoSize = true, Location = new Point(18, 24) };
+        var recentLimit = new NumericUpDown
+        {
+            Minimum = 1,
+            Maximum = 100,
+            Value = _settings.RecentFileLimit,
+            Width = 80,
+            Location = new Point(290, 20)
+        };
+        var fullPath = new CheckBox
+        {
+            Text = "タイトルバーに現在のファイルのフルパスを表示する",
+            AutoSize = true,
+            Checked = _settings.ShowFullPathInTitle,
+            Location = new Point(18, 62)
+        };
+        var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Location = new Point(230, 108), Width = 75 };
+        var cancel = new Button { Text = "キャンセル", DialogResult = DialogResult.Cancel, Location = new Point(315, 108), Width = 80 };
+        dialog.Controls.AddRange([recentLabel, recentLimit, fullPath, ok, cancel]);
+        dialog.AcceptButton = ok;
+        dialog.CancelButton = cancel;
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+        _settings = new EditorSettings((int)recentLimit.Value, fullPath.Checked).Normalize();
+        _settingsStore.Save(_settings);
+        _recentFiles.SetCapacity(_settings.RecentFileLimit);
+        UpdateWorkspaceTitle();
+    }
 
     internal bool IsPathOpen(string path)
     {
@@ -408,12 +454,12 @@ internal sealed class EditorWorkspaceForm : Form
             ReplaceHelpItem(help, item => item.Text.Contains("バージョン情報", StringComparison.Ordinal),
                 new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show(
                     child,
-                    "vi_text_editor v0.1.40\nFont size status display",
+                    "vi_text_editor v0.1.41\nConfigurable recent files and title path",
                     "バージョン情報",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information)));
             ReplaceHelpItem(help, item => item.Text.Contains("ワークスペース操作", StringComparison.Ordinal),
-                new ToolStripMenuItem("v0.1.40 ワークスペース操作", null, (_, _) => MessageBox.Show(
+                new ToolStripMenuItem("v0.1.41 ワークスペース操作", null, (_, _) => MessageBox.Show(
                     child,
                     "Ctrl+Shift+J: JSON整形\nCtrl+Shift+M: Markdownプレビュー\nCtrl+Tab / Ctrl+Shift+Tab: タブ切替\nCtrl+PageDown / Ctrl+PageUp: タブ切替\nタブ見出しのドラッグ＆ドロップ: 並べ替え\n\nMarkdown vi: j/k, Ctrl+F/B/D/U, gg/G, / ? n/N\nMarkdown COMMAND: :set ic / :set noic / :set ic?\nCtrl+マウスホイール: デバウンスされた拡大縮小\nURL: http:// / https:// をリンク表示し、シングルクリックで既定ブラウザから開く\n\nWindows: 二重起動せず、Shell起動／ドラッグ＆ドロップしたファイルを既存ウィンドウの新規タブで開く",
                     "ワークスペース操作",
@@ -525,14 +571,22 @@ internal sealed class EditorWorkspaceForm : Form
                 if (!string.IsNullOrWhiteSpace(path)) _recentFiles.Add(path);
             }
         }
+        if (ReferenceEquals(_tabs.SelectedTab, page)) UpdateWorkspaceTitle();
     }
 
     private void UpdateWorkspaceTitle()
     {
-        var selectedIndex = _tabs.SelectedIndex;
-        Text = selectedIndex < 0 || selectedIndex >= _tabs.TabCount
-            ? "vi_text_editor"
-            : $"{_tabs.TabPages[selectedIndex].Text} - vi_text_editor workspace";
+        if (_tabs.SelectedTab is not { } page || !_sessions.TryGetValue(page, out var session))
+        {
+            Text = "vi_text_editor";
+            return;
+        }
+
+        var displayName = !string.IsNullOrWhiteSpace(session.FilePath)
+            ? _settings.ShowFullPathInTitle ? Path.GetFullPath(session.FilePath) : Path.GetFileName(session.FilePath)
+            : page.Text;
+        var dirtyPrefix = page.Text.StartsWith('*') && !displayName.StartsWith('*') ? "*" : string.Empty;
+        Text = $"{dirtyPrefix}{displayName} - vi_text_editor";
     }
 
     private void FocusSelectedTabContent()

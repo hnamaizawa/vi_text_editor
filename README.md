@@ -2,7 +2,7 @@
 
 Windows向けの軽量テキストエディターです。EmEditor／サクラエディタに近いGUIとファイル操作を持ち、基本操作はvi/Vim系キーバインドで行います。
 
-現在のアプリ版は **v0.1.40** です。
+現在のアプリ版は **v0.1.41** です。
 
 ## 主な特徴
 
@@ -36,6 +36,13 @@ Windows向けの軽量テキストエディターです。EmEditor／サクラ�
 10. AIがLatest ReleaseにSingle-file EXE / Portable ZIPが公開されたことを確認する
 
 ## 変更履歴
+
+### v0.1.41
+
+- 最近使ったファイルの既定表示件数を15件から20件へ拡張
+- ウィンドウ最上部のタイトルバーに、現在開いているファイルのフルパスを表示
+- `設定 > 一般設定` から、最近使ったファイルの表示件数（1～100件）とフルパス表示のON/OFFを変更可能
+- 設定を `%APPDATA%\\vi_text_editor\\settings.json` に保存し、次回起動時にも適用
 
 ### v0.1.40
 
@@ -266,7 +273,7 @@ Windows向けの軽量テキストエディターです。EmEditor／サクラ�
 - Large Fileモードへ `j/k`, `Ctrl+F/B`, `Ctrl+D/U`, `gg/G`, `/ ? n N`, `:set ic/noic` を追加
 - 複数タブを追加。各タブでテキストバッファ、Undo履歴、vi状態を分離
 - `Ctrl+T`, `Ctrl+W`, `Ctrl+Tab`, `Ctrl+Shift+Tab` を追加
-- 最近使ったファイルを `%APPDATA%\vi_text_editor\recent-files.json` に最大15件保存
+- 最近使ったファイルを `%APPDATA%\vi_text_editor\recent-files.json` に既定で最大20件保存（設定で1～100件）
 - `Ctrl+Shift+J` でJSON整形
 - `Ctrl+Shift+M` でMarkdownプレビューを別タブ表示
 
@@ -451,7 +458,7 @@ NORMALモードで `:` を押すと画面下部のCOMMAND入力欄へ移りま�
 - `Ctrl+Tab` / `Ctrl+PageDown`: 次のタブ
 - `Ctrl+Shift+Tab` / `Ctrl+PageUp`: 前のタブ
 - キーボードでタブ切替後は選択されたタブ本文へフォーカス
-- 最近使ったファイルは最大15件保存
+- 最近使ったファイルは既定で最大20件保存（設定で1～100件に変更可能）
 
 ## Large Fileモード
 
