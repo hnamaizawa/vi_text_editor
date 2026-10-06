@@ -2,7 +2,7 @@ namespace ViTextEditor.Core.IO;
 
 public sealed class RecentFileList
 {
-    private readonly int _capacity;
+    private int _capacity;
     private readonly List<string> _items = [];
 
     public RecentFileList(int capacity = 15)
@@ -12,6 +12,14 @@ public sealed class RecentFileList
     }
 
     public IReadOnlyList<string> Items => _items;
+    public int Capacity => _capacity;
+
+    public void SetCapacity(int capacity)
+    {
+        if (capacity < 1) throw new ArgumentOutOfRangeException(nameof(capacity));
+        _capacity = capacity;
+        TrimToCapacity();
+    }
 
     public void Load(IEnumerable<string> paths)
     {
@@ -28,12 +36,17 @@ public sealed class RecentFileList
 
         _items.RemoveAll(item => string.Equals(item, normalized, StringComparison.OrdinalIgnoreCase));
         _items.Insert(0, normalized);
-        if (_items.Count > _capacity) _items.RemoveRange(_capacity, _items.Count - _capacity);
+        TrimToCapacity();
     }
 
     public void RemoveMissing(Func<string, bool>? exists = null)
     {
         exists ??= File.Exists;
         _items.RemoveAll(path => !exists(path));
+    }
+
+    private void TrimToCapacity()
+    {
+        if (_items.Count > _capacity) _items.RemoveRange(_capacity, _items.Count - _capacity);
     }
 }

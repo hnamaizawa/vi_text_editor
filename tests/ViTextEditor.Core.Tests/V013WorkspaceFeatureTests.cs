@@ -48,6 +48,21 @@ public sealed class V013WorkspaceFeatureTests
     }
 
     [Fact]
+    public void RecentFileListCanChangeCapacityAndTrimsOldestItems()
+    {
+        var recent = new RecentFileList(3);
+        recent.Add("a.txt");
+        recent.Add("b.txt");
+        recent.Add("c.txt");
+
+        recent.SetCapacity(2);
+
+        Assert.Equal(2, recent.Capacity);
+        Assert.EndsWith("c.txt", recent.Items[0], StringComparison.OrdinalIgnoreCase);
+        Assert.EndsWith("b.txt", recent.Items[1], StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void JsonFormatterIndentsAndPreservesRequestedNewLine()
     {
         Assert.True(JsonFormattingService.TryFormat("{\"a\":1,\"b\":[true,false]}", "\r\n", out var formatted, out var error));

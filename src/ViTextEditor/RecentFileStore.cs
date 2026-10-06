@@ -6,10 +6,11 @@ namespace ViTextEditor;
 internal sealed class RecentFileStore
 {
     private readonly string _settingsPath;
-    private readonly RecentFileList _recent = new(15);
+    private readonly RecentFileList _recent;
 
-    public RecentFileStore()
+    public RecentFileStore(int capacity = 20)
     {
+        _recent = new RecentFileList(capacity);
         var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "vi_text_editor");
         Directory.CreateDirectory(root);
         _settingsPath = Path.Combine(root, "recent-files.json");
@@ -17,6 +18,12 @@ internal sealed class RecentFileStore
     }
 
     public IReadOnlyList<string> Files => _recent.Items;
+
+    public void SetCapacity(int capacity)
+    {
+        _recent.SetCapacity(capacity);
+        Save();
+    }
 
     public void Add(string path)
     {
