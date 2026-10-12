@@ -454,12 +454,12 @@ internal sealed class EditorWorkspaceForm : Form
             ReplaceHelpItem(help, item => item.Text.Contains("バージョン情報", StringComparison.Ordinal),
                 new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show(
                     child,
-                    "vi_text_editor v0.1.41\nConfigurable recent files and title path",
+                    "vi_text_editor v0.1.42\nExit after closing the last file",
                     "バージョン情報",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information)));
             ReplaceHelpItem(help, item => item.Text.Contains("ワークスペース操作", StringComparison.Ordinal),
-                new ToolStripMenuItem("v0.1.41 ワークスペース操作", null, (_, _) => MessageBox.Show(
+                new ToolStripMenuItem("v0.1.42 ワークスペース操作", null, (_, _) => MessageBox.Show(
                     child,
                     "Ctrl+Shift+J: JSON整形\nCtrl+Shift+M: Markdownプレビュー\nCtrl+Tab / Ctrl+Shift+Tab: タブ切替\nCtrl+PageDown / Ctrl+PageUp: タブ切替\nタブ見出しのドラッグ＆ドロップ: 並べ替え\n\nMarkdown vi: j/k, Ctrl+F/B/D/U, gg/G, / ? n/N\nMarkdown COMMAND: :set ic / :set noic / :set ic?\nCtrl+マウスホイール: デバウンスされた拡大縮小\nURL: http:// / https:// をリンク表示し、シングルクリックで既定ブラウザから開く\n\nWindows: 二重起動せず、Shell起動／ドラッグ＆ドロップしたファイルを既存ウィンドウの新規タブで開く",
                     "ワークスペース操作",
@@ -543,8 +543,8 @@ internal sealed class EditorWorkspaceForm : Form
         _sessions.Remove(page);
         _tabs.TabPages.Remove(page);
         page.Dispose();
-        if (_tabs.TabCount == 0 && !_closingWorkspace) AddBlankEditorTab(true);
         UpdateWorkspaceTitle();
+        ExitWorkspaceIfNoTabsRemain();
     }
 
     private void RemoveClosedEditorTab(TabPage page)
@@ -552,8 +552,20 @@ internal sealed class EditorWorkspaceForm : Form
         if (!_sessions.Remove(page)) return;
         _tabs.TabPages.Remove(page);
         page.Dispose();
-        if (_tabs.TabCount == 0 && !_closingWorkspace) AddBlankEditorTab(true);
         UpdateWorkspaceTitle();
+        ExitWorkspaceIfNoTabsRemain();
+    }
+
+    private void ExitWorkspaceIfNoTabsRemain()
+    {
+        if (_tabs.TabCount != 0 || _closingWorkspace || IsDisposed || Disposing) return;
+
+        // An embedded editor can finish closing from a deferred :q/:q! callback.
+        // Close the workspace on the next UI message to avoid nesting Form.Close calls.
+        BeginInvoke(new Action(() =>
+        {
+            if (_tabs.TabCount == 0 && !_closingWorkspace && !IsDisposed && !Disposing) Close();
+        }));
     }
 
     private void UpdateTabTitle(TabPage page, WorkspaceTab session)
