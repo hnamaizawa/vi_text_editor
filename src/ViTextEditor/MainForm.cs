@@ -691,7 +691,27 @@ public sealed class MainForm : Form
 
         var lineNumber = _editor.LineFromPosition(_editor.CurrentPosition);
         if (lineNumber < 0 || lineNumber >= _editor.Lines.Count) return false;
-        var lineText = _editor.Lines[lineNumber].Text.TrimEnd('\r', '\n');
+        var line = _editor.Lines[lineNumber];
+        var lineText = line.Text.TrimEnd('\r', '\n');
+
+        if (MarkdownListContinuation.IsEmptyListItem(lineText))
+        {
+            _editor.BeginUndoAction();
+            try
+            {
+                _editor.SetSelection(line.Position + lineText.Length, line.Position);
+                _editor.ReplaceSelection(string.Empty);
+            }
+            finally
+            {
+                _editor.EndUndoAction();
+            }
+
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+            return true;
+        }
+
         if (!MarkdownListContinuation.TryCreatePrefix(lineText, out var prefix)) return false;
 
         _editor.BeginUndoAction();
