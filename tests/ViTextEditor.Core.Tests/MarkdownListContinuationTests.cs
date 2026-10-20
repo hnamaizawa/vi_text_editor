@@ -29,4 +29,26 @@ public sealed class MarkdownListContinuationTests
         Assert.False(MarkdownListContinuation.TryCreatePrefix(line, out var prefix));
         Assert.Empty(prefix);
     }
+
+    [Theory]
+    [InlineData("-")]
+    [InlineData("- ")]
+    [InlineData("  -   ")]
+    [InlineData("\t-\t")]
+    public void IsEmptyListItem_DetectsEmptyBulletLines(string line)
+    {
+        Assert.True(MarkdownListContinuation.IsEmptyListItem(line));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("- item")]
+    [InlineData("  - item")]
+    [InlineData("-not-a-list")]
+    [InlineData("heading - ")]
+    public void IsEmptyListItem_IgnoresContentAndNonListLines(string line)
+    {
+        Assert.False(MarkdownListContinuation.IsEmptyListItem(line));
+    }
 }
