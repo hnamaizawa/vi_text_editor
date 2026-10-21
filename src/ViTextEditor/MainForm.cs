@@ -627,6 +627,7 @@ public sealed class MainForm : Form
 
     internal int RunMarkdownListEnterSmokeTest(out string diagnostic)
     {
+        _forceClose = true;
         _referenceMode = false;
         ApplyReferenceMode();
 
