@@ -9,6 +9,8 @@ public sealed class MarkdownListContinuationTests
     [InlineData("- item", "  - ")]
     [InlineData("  - item", "    - ")]
     [InlineData("\t- item", "\t  - ")]
+    [InlineData("- aaa", "  - ")]
+    [InlineData("  - 日本語", "    - ")]
     public void TryCreatePrefix_IndentsNestedBulletByTwoCharacters(string line, string expected)
     {
         Assert.True(MarkdownListContinuation.TryCreatePrefix(line, out var prefix));

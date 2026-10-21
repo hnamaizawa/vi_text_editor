@@ -625,6 +625,32 @@ public sealed class MainForm : Form
         return 0;
     }
 
+    internal int RunMarkdownListEnterSmokeTest(out string diagnostic)
+    {
+        LoadTextIntoEditor("- aaa");
+        _editor.GotoPosition(_editor.TextLength);
+        if (!TryApplyMarkdownListEnter() || _editor.Text != "- aaa\r\n  - ")
+        {
+            diagnostic = $"Non-empty list continuation failed: {EscapeForDiagnostic(_editor.Text)}";
+            return 1;
+        }
+
+        LoadTextIntoEditor("- aaa\r\n  - ");
+        _editor.GotoPosition(_editor.TextLength);
+        if (!TryApplyMarkdownListEnter() || _editor.Text != "- aaa\r\n")
+        {
+            diagnostic = $"Empty list termination failed: {EscapeForDiagnostic(_editor.Text)}";
+            return 2;
+        }
+
+        diagnostic = "PASS";
+        return 0;
+    }
+
+    private static string EscapeForDiagnostic(string value) =>
+        value.Replace("\r", "\\r", StringComparison.Ordinal)
+            .Replace("\n", "\\n", StringComparison.Ordinal);
+
     private void EditorOnKeyDown(object? sender, KeyEventArgs e)
     {
         if (_binaryMode) return;
@@ -689,43 +715,51 @@ public sealed class MainForm : Form
             return false;
         }
 
+        if (!TryApplyMarkdownListEnter()) return false;
+
+        e.Handled = true;
+        e.SuppressKeyPress = true;
+        return true;
+    }
+
+    private bool TryApplyMarkdownListEnter()
+    {
         var lineNumber = _editor.LineFromPosition(_editor.CurrentPosition);
         if (lineNumber < 0 || lineNumber >= _editor.Lines.Count) return false;
         var line = _editor.Lines[lineNumber];
         var lineText = line.Text.TrimEnd('\r', '\n');
 
-        if (MarkdownListContinuation.IsEmptyListItem(lineText))
+        // Preserve the original, proven continuation path for every list item
+        // containing text. Only evaluate empty-item termination if continuation
+        // does not apply.
+        if (MarkdownListContinuation.TryCreatePrefix(lineText, out var prefix))
         {
             _editor.BeginUndoAction();
             try
             {
-                _editor.SetSelection(line.Position + lineText.Length, line.Position);
-                _editor.ReplaceSelection(string.Empty);
+                _editor.ReplaceSelection(_newLine + prefix);
             }
             finally
             {
                 _editor.EndUndoAction();
             }
 
-            e.Handled = true;
-            e.SuppressKeyPress = true;
             return true;
         }
 
-        if (!MarkdownListContinuation.TryCreatePrefix(lineText, out var prefix)) return false;
+        if (!MarkdownListContinuation.IsEmptyListItem(lineText)) return false;
 
         _editor.BeginUndoAction();
         try
         {
-            _editor.ReplaceSelection(_newLine + prefix);
+            _editor.SetSelection(line.Position + lineText.Length, line.Position);
+            _editor.ReplaceSelection(string.Empty);
         }
         finally
         {
             _editor.EndUndoAction();
         }
 
-        e.Handled = true;
-        e.SuppressKeyPress = true;
         return true;
     }
 
