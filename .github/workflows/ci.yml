@@ -61,6 +61,23 @@ jobs:
           name: url-indicator-smoke-diagnostic
           path: ${{ runner.temp }}/url-indicator-smoke-result.txt
           if-no-files-found: error
+      - name: Smoke-test Markdown list Enter behavior
+        shell: pwsh
+        run: |
+          $diagnostic = Join-Path $env:RUNNER_TEMP "markdown-list-enter-smoke-result.txt"
+          $arguments = "--markdown-list-enter-smoke-test `"$diagnostic`""
+          $process = Start-Process -FilePath "artifacts/vi_text_editor-win-x64/vi_text_editor.exe" -ArgumentList $arguments -PassThru -Wait
+          if ($process.ExitCode -ne 0) {
+            Get-Content $diagnostic -ErrorAction SilentlyContinue
+            throw "Markdown list Enter smoke test failed with exit code $($process.ExitCode)."
+          }
+      - name: Upload Markdown list Enter smoke diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: markdown-list-enter-smoke-diagnostic
+          path: ${{ runner.temp }}/markdown-list-enter-smoke-result.txt
+          if-no-files-found: error
       - name: Smoke-test blank-tab replacement and tab reorder
         shell: pwsh
         run: |
