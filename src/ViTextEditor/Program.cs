@@ -59,7 +59,7 @@ internal static class Program
         {
             if (startupPaths.Length == 0) return 2;
 
-            using var smokeWorkspace = new EditorWorkspaceForm(startupPaths);
+            using var smokeWorkspace = new EditorWorkspaceForm(startupPaths, restorePreviousWorkspace: false);
             smokeWorkspace.CreateControl();
             return startupPaths.All(smokeWorkspace.IsPathOpen) ? 0 : 3;
         }
@@ -69,7 +69,7 @@ internal static class Program
             // CI/local packaging smoke test: constructing the workspace creates the
             // embedded MainForm and Scintilla control, so native-library startup
             // regressions fail here instead of producing a silently exiting EXE.
-            using var smokeWorkspace = new EditorWorkspaceForm();
+            using var smokeWorkspace = new EditorWorkspaceForm(restorePreviousWorkspace: false);
             smokeWorkspace.CreateControl();
             return 0;
         }
@@ -120,7 +120,7 @@ internal static class Program
             try
             {
                 File.WriteAllText(sample, "workspace tab smoke test");
-                using var smokeWorkspace = new EditorWorkspaceForm();
+                using var smokeWorkspace = new EditorWorkspaceForm(restorePreviousWorkspace: false);
                 smokeWorkspace.CreateControl();
                 if (smokeWorkspace.TabCountForSmokeTest != 1)
                     return FinishWorkspaceTabSmokeTest(7, $"Initial tab count was {smokeWorkspace.TabCountForSmokeTest}, expected 1.");
@@ -136,7 +136,7 @@ internal static class Program
                 if (!smokeWorkspace.TabTitlesForSmokeTest[0].Contains("無題", StringComparison.Ordinal))
                     return FinishWorkspaceTabSmokeTest(10, $"Tab reorder failed: {string.Join(" | ", smokeWorkspace.TabTitlesForSmokeTest)}.");
 
-                using var protectedWorkspace = new EditorWorkspaceForm();
+                using var protectedWorkspace = new EditorWorkspaceForm(restorePreviousWorkspace: false);
                 protectedWorkspace.CreateControl();
                 if (!protectedWorkspace.TypeIntoSelectedEditorForSmokeTest("keep me"))
                     return FinishWorkspaceTabSmokeTest(11, "Could not type into the selected untitled editor.");

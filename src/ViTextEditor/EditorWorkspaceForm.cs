@@ -15,12 +15,12 @@ internal sealed class EditorWorkspaceForm : Form
     private Point _tabDragStart;
     private EditorSettings _settings;
 
-    public EditorWorkspaceForm(IEnumerable<string>? startupPaths = null)
+    public EditorWorkspaceForm(IEnumerable<string>? startupPaths = null, bool restorePreviousWorkspace = true)
     {
         _settingsStore = new EditorSettingsStore();
         _workspaceStateStore = new WorkspaceStateStore();
         _settings = _settingsStore.Load();
-        var previousWorkspace = _workspaceStateStore.Load();
+        var previousWorkspace = restorePreviousWorkspace ? _workspaceStateStore.Load() : WorkspaceState.Empty;
         _recentFiles = new RecentFileStore(_settings.RecentFileLimit);
         Text = "vi_text_editor";
         Width = 1180;
