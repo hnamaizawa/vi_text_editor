@@ -630,21 +630,30 @@ public sealed class MainForm : Form
         _forceClose = true;
         _referenceMode = false;
         ApplyReferenceMode();
-
-        LoadTextIntoEditor("- aaa");
-        _editor.GotoPosition(_editor.TextLength);
-        if (!TryApplyMarkdownListEnter() || _editor.Text != "- aaa\r\n  - ")
+        _loading = true;
+        try
         {
-            diagnostic = $"Non-empty list continuation failed: {EscapeForDiagnostic(_editor.Text)}";
-            return 1;
+            LoadTextIntoEditor("- aaa");
+            _loading = true;
+            _editor.GotoPosition(_editor.TextLength);
+            if (!TryApplyMarkdownListEnter() || _editor.Text != "- aaa\r\n  - ")
+            {
+                diagnostic = $"Non-empty list continuation failed: {EscapeForDiagnostic(_editor.Text)}";
+                return 1;
+            }
+
+            LoadTextIntoEditor("- aaa\r\n  - ");
+            _loading = true;
+            _editor.GotoPosition(_editor.TextLength);
+            if (!TryApplyMarkdownListEnter() || _editor.Text != "- aaa\r\n")
+            {
+                diagnostic = $"Empty list termination failed: {EscapeForDiagnostic(_editor.Text)}";
+                return 2;
+            }
         }
-
-        LoadTextIntoEditor("- aaa\r\n  - ");
-        _editor.GotoPosition(_editor.TextLength);
-        if (!TryApplyMarkdownListEnter() || _editor.Text != "- aaa\r\n")
+        finally
         {
-            diagnostic = $"Empty list termination failed: {EscapeForDiagnostic(_editor.Text)}";
-            return 2;
+            _loading = false;
         }
 
         diagnostic = "PASS";
