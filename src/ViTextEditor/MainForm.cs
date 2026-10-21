@@ -634,6 +634,7 @@ public sealed class MainForm : Form
         try
         {
             LoadTextIntoEditor("- aaa");
+            _loading = true;
             _editor.GotoPosition(_editor.TextLength);
             _vi.Handle("i");
             var contentEnter = new KeyEventArgs(Keys.Enter);
@@ -660,6 +661,7 @@ public sealed class MainForm : Form
             }
 
             LoadTextIntoEditor("- aaa\r\n  - ");
+            _loading = true;
             _editor.GotoPosition(_editor.TextLength);
             var emptyEnter = new KeyEventArgs(Keys.Enter);
             EditorOnKeyDown(_editor, emptyEnter);
@@ -674,6 +676,7 @@ public sealed class MainForm : Form
         }
         finally
         {
+            _loading = false;
             _filePath = null;
         }
 
