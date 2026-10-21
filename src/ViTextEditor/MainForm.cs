@@ -627,6 +627,9 @@ public sealed class MainForm : Form
 
     internal int RunMarkdownListEnterSmokeTest(out string diagnostic)
     {
+        _referenceMode = false;
+        ApplyReferenceMode();
+
         LoadTextIntoEditor("- aaa");
         _editor.GotoPosition(_editor.TextLength);
         if (!TryApplyMarkdownListEnter() || _editor.Text != "- aaa\r\n  - ")

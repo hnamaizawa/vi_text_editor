@@ -6,6 +6,7 @@ internal sealed class EditorWorkspaceForm : Form
 {
     private readonly TabControl _tabs = new();
     private readonly EditorSettingsStore _settingsStore;
+    private readonly WorkspaceStateStore _workspaceStateStore;
     private readonly RecentFileStore _recentFiles;
     private readonly Dictionary<TabPage, WorkspaceTab> _sessions = new();
     private readonly HashSet<MainForm> _deferredClosePass = [];
@@ -17,12 +18,15 @@ internal sealed class EditorWorkspaceForm : Form
     public EditorWorkspaceForm(IEnumerable<string>? startupPaths = null)
     {
         _settingsStore = new EditorSettingsStore();
+        _workspaceStateStore = new WorkspaceStateStore();
         _settings = _settingsStore.Load();
+        var previousWorkspace = _workspaceStateStore.Load();
         _recentFiles = new RecentFileStore(_settings.RecentFileLimit);
         Text = "vi_text_editor";
         Width = 1180;
         Height = 820;
         StartPosition = FormStartPosition.CenterScreen;
+        RestoreWindowPlacement(previousWorkspace);
 
         _tabs.Dock = DockStyle.Fill;
         _tabs.Padding = new Point(16, 5);
@@ -37,18 +41,56 @@ internal sealed class EditorWorkspaceForm : Form
 
         FormClosing += WorkspaceOnFormClosing;
 
-        var paths = startupPaths?
+        var requestedPaths = startupPaths?
             .Where(path => !string.IsNullOrWhiteSpace(path))
             .ToArray() ?? [];
+        var paths = previousWorkspace.OpenFiles
+            .Concat(requestedPaths)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
         if (paths.Length == 0)
         {
             AddBlankEditorTab(select: true);
         }
         else
         {
-            foreach (var path in paths) OpenPath(path, select: true);
+            foreach (var path in paths) OpenPath(path, select: false);
             if (_tabs.TabCount == 0) AddBlankEditorTab(select: true);
+            else SelectRestoredTab(previousWorkspace.SelectedFile, requestedPaths);
         }
+    }
+
+    private void RestoreWindowPlacement(WorkspaceState state)
+    {
+        if (state.Width < 400 || state.Height < 300) return;
+
+        var bounds = new Rectangle(state.Left, state.Top, state.Width, state.Height);
+        if (!Screen.AllScreens.Any(screen => screen.WorkingArea.IntersectsWith(bounds))) return;
+
+        StartPosition = FormStartPosition.Manual;
+        Bounds = bounds;
+        if (state.Maximized) WindowState = FormWindowState.Maximized;
+    }
+
+    private void SelectRestoredTab(string? previousSelection, IReadOnlyList<string> requestedPaths)
+    {
+        var selection = requestedPaths.LastOrDefault() ?? previousSelection;
+        if (!string.IsNullOrWhiteSpace(selection))
+        {
+            string fullSelection;
+            try { fullSelection = Path.GetFullPath(selection); }
+            catch { fullSelection = string.Empty; }
+            var page = _sessions.FirstOrDefault(pair =>
+                !string.IsNullOrWhiteSpace(pair.Value.FilePath) &&
+                string.Equals(Path.GetFullPath(pair.Value.FilePath), fullSelection, StringComparison.OrdinalIgnoreCase)).Key;
+            if (page is not null)
+            {
+                _tabs.SelectedTab = page;
+                return;
+            }
+        }
+
+        if (_tabs.TabCount > 0) _tabs.SelectedIndex = 0;
     }
 
     public RecentFileStore RecentFiles => _recentFiles;
@@ -454,7 +496,7 @@ internal sealed class EditorWorkspaceForm : Form
             ReplaceHelpItem(help, item => item.Text.Contains("バージョン情報", StringComparison.Ordinal),
                 new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show(
                     child,
-                    "vi_text_editor v0.1.44\nRestore non-empty Markdown list continuation",
+                    "vi_text_editor v0.1.44\nMarkdown list fix and workspace restoration",
                     "バージョン情報",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information)));
@@ -678,6 +720,7 @@ internal sealed class EditorWorkspaceForm : Form
     private void WorkspaceOnFormClosing(object? sender, FormClosingEventArgs e)
     {
         if (_closingWorkspace) return;
+        var workspaceState = CaptureWorkspaceState();
         _closingWorkspace = true;
         foreach (var form in _sessions.Values.Select(s => s.EditorForm).Where(f => f is not null).Cast<MainForm>().ToArray())
         {
@@ -690,6 +733,30 @@ internal sealed class EditorWorkspaceForm : Form
                 return;
             }
         }
+        _workspaceStateStore.Save(workspaceState);
+    }
+
+    private WorkspaceState CaptureWorkspaceState()
+    {
+        var bounds = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
+        var openFiles = _tabs.TabPages.Cast<TabPage>()
+            .Select(page => _sessions.TryGetValue(page, out var session) ? session.FilePath : null)
+            .Where(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path))
+            .Cast<string>()
+            .Select(Path.GetFullPath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var selectedFile = _tabs.SelectedTab is { } selected && _sessions.TryGetValue(selected, out var selectedSession)
+            ? selectedSession.FilePath
+            : null;
+        return new WorkspaceState(
+            openFiles,
+            selectedFile,
+            bounds.Left,
+            bounds.Top,
+            bounds.Width,
+            bounds.Height,
+            WindowState == FormWindowState.Maximized);
     }
 
     private enum WorkspaceTabKind { Editor, LargeFile, MarkdownPreview }
