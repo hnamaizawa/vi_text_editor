@@ -630,30 +630,54 @@ public sealed class MainForm : Form
         _forceClose = true;
         _referenceMode = false;
         ApplyReferenceMode();
-        _loading = true;
+        _filePath = Path.Combine(Path.GetTempPath(), "vi-text-editor-markdown-list-smoke.md");
         try
         {
             LoadTextIntoEditor("- aaa");
             _loading = true;
             _editor.GotoPosition(_editor.TextLength);
-            if (!TryApplyMarkdownListEnter() || _editor.Text != "- aaa\r\n  - ")
+            _vi.Handle("i");
+            var contentEnter = new KeyEventArgs(Keys.Enter);
+            EditorOnKeyDown(_editor, contentEnter);
+            if (!contentEnter.Handled || !contentEnter.SuppressKeyPress ||
+                _editor.Text != "- aaa\r\n  - " ||
+                _editor.CurrentPosition != _editor.TextLength)
             {
-                diagnostic = $"Non-empty list continuation failed: {EscapeForDiagnostic(_editor.Text)}";
+                diagnostic = $"Non-empty list continuation failed: text={EscapeForDiagnostic(_editor.Text)}, " +
+                             $"caret={_editor.CurrentPosition}, handled={contentEnter.Handled}, suppressed={contentEnter.SuppressKeyPress}.";
                 return 1;
+            }
+
+            _editor.AddText("bbb");
+            var nestedEnter = new KeyEventArgs(Keys.Enter);
+            EditorOnKeyDown(_editor, nestedEnter);
+            if (!nestedEnter.Handled || !nestedEnter.SuppressKeyPress ||
+                _editor.Text != "- aaa\r\n  - bbb\r\n    - " ||
+                _editor.CurrentPosition != _editor.TextLength)
+            {
+                diagnostic = $"Nested list continuation failed: text={EscapeForDiagnostic(_editor.Text)}, " +
+                             $"caret={_editor.CurrentPosition}, handled={nestedEnter.Handled}, suppressed={nestedEnter.SuppressKeyPress}.";
+                return 2;
             }
 
             LoadTextIntoEditor("- aaa\r\n  - ");
             _loading = true;
             _editor.GotoPosition(_editor.TextLength);
-            if (!TryApplyMarkdownListEnter() || _editor.Text != "- aaa\r\n")
+            var emptyEnter = new KeyEventArgs(Keys.Enter);
+            EditorOnKeyDown(_editor, emptyEnter);
+            if (!emptyEnter.Handled || !emptyEnter.SuppressKeyPress ||
+                _editor.Text != "- aaa\r\n" ||
+                _editor.CurrentPosition != _editor.TextLength)
             {
-                diagnostic = $"Empty list termination failed: {EscapeForDiagnostic(_editor.Text)}";
-                return 2;
+                diagnostic = $"Empty list termination failed: text={EscapeForDiagnostic(_editor.Text)}, " +
+                             $"caret={_editor.CurrentPosition}, handled={emptyEnter.Handled}, suppressed={emptyEnter.SuppressKeyPress}.";
+                return 3;
             }
         }
         finally
         {
             _loading = false;
+            _filePath = null;
         }
 
         diagnostic = "PASS";
@@ -750,11 +774,14 @@ public sealed class MainForm : Form
             _editor.BeginUndoAction();
             try
             {
-                // Insert the line break and list prefix separately. Scintilla can
-                // discard trailing whitespace from a compound CRLF + prefix
-                // replacement, which previously left only the bare new line.
+                // Insert the line break and prefix separately, then place the
+                // caret explicitly after the prefix. Scintilla can discard
+                // trailing whitespace from a compound replacement, and AddText
+                // does not provide a caret-position guarantee for this path.
                 _editor.ReplaceSelection(_newLine);
-                _editor.AddText(prefix);
+                var prefixPosition = _editor.CurrentPosition;
+                _editor.InsertText(prefixPosition, prefix);
+                _editor.GotoPosition(prefixPosition + Encoding.UTF8.GetByteCount(prefix));
             }
             finally
             {
@@ -771,6 +798,7 @@ public sealed class MainForm : Form
         {
             _editor.SetSelection(line.Position + lineText.Length, line.Position);
             _editor.ReplaceSelection(string.Empty);
+            _editor.GotoPosition(line.Position);
         }
         finally
         {
