@@ -737,7 +737,11 @@ public sealed class MainForm : Form
             _editor.BeginUndoAction();
             try
             {
-                _editor.ReplaceSelection(_newLine + prefix);
+                // Insert the line break and list prefix separately. Scintilla can
+                // discard trailing whitespace from a compound CRLF + prefix
+                // replacement, which previously left only the bare new line.
+                _editor.ReplaceSelection(_newLine);
+                _editor.AddText(prefix);
             }
             finally
             {
