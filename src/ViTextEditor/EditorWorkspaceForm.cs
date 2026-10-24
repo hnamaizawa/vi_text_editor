@@ -119,7 +119,8 @@ internal sealed class EditorWorkspaceForm : Form
             MinimizeBox = false,
             MaximizeBox = false,
             ShowInTaskbar = false,
-            ClientSize = new Size(440, 200)
+            AutoScaleMode = AutoScaleMode.Dpi,
+            ClientSize = new Size(480, 250)
         };
         var recentLabel = new Label { Text = "最近使ったファイルの表示件数:", AutoSize = true, Location = new Point(18, 24) };
         var recentLimit = new NumericUpDown
@@ -151,9 +152,18 @@ internal sealed class EditorWorkspaceForm : Form
             ForeColor = SystemColors.GrayText,
             Location = new Point(36, 122)
         };
-        var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Location = new Point(260, 153), Width = 75 };
-        var cancel = new Button { Text = "キャンセル", DialogResult = DialogResult.Cancel, Location = new Point(345, 153), Width = 80 };
-        dialog.Controls.AddRange([recentLabel, recentLimit, fullPath, restoreOpenFiles, restartNote, ok, cancel]);
+        var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Size = new Size(92, 32), Margin = new Padding(8, 0, 0, 0) };
+        var cancel = new Button { Text = "キャンセル", DialogResult = DialogResult.Cancel, Size = new Size(92, 32), Margin = new Padding(8, 0, 0, 0) };
+        var buttonPanel = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 64,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = false,
+            Padding = new Padding(0, 14, 18, 10)
+        };
+        buttonPanel.Controls.AddRange([cancel, ok]);
+        dialog.Controls.AddRange([recentLabel, recentLimit, fullPath, restoreOpenFiles, restartNote, buttonPanel]);
         dialog.AcceptButton = ok;
         dialog.CancelButton = cancel;
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
@@ -527,12 +537,12 @@ internal sealed class EditorWorkspaceForm : Form
             ReplaceHelpItem(help, item => item.Text.Contains("バージョン情報", StringComparison.Ordinal),
                 new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show(
                     child,
-                    "vi_text_editor v0.1.46\nConfigurable startup file restoration",
+                    "vi_text_editor v0.1.47\nImproved settings dialog layout",
                     "バージョン情報",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information)));
             ReplaceHelpItem(help, item => item.Text.Contains("ワークスペース操作", StringComparison.Ordinal),
-                new ToolStripMenuItem("v0.1.46 ワークスペース操作", null, (_, _) => MessageBox.Show(
+                new ToolStripMenuItem("v0.1.47 ワークスペース操作", null, (_, _) => MessageBox.Show(
                     child,
                     "Ctrl+Shift+J: JSON整形\nCtrl+Shift+M: Markdownプレビュー\nCtrl+Tab / Ctrl+Shift+Tab: タブ切替\nCtrl+PageDown / Ctrl+PageUp: タブ切替\nタブ見出しのドラッグ＆ドロップ: 並べ替え\n\nMarkdown vi: j/k, Ctrl+F/B/D/U, gg/G, / ? n/N\nMarkdown COMMAND: :set ic / :set noic / :set ic?\nCtrl+マウスホイール: デバウンスされた拡大縮小\nURL: http:// / https:// をリンク表示し、シングルクリックで既定ブラウザから開く\n\nWindows: 二重起動せず、Shell起動／ドラッグ＆ドロップしたファイルを既存ウィンドウの新規タブで開く",
                     "ワークスペース操作",
