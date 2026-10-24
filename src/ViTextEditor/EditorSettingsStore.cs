@@ -2,11 +2,15 @@ using System.Text.Json;
 
 namespace ViTextEditor;
 
-internal sealed record EditorSettings(int RecentFileLimit = 20, bool ShowFullPathInTitle = true)
+internal sealed record EditorSettings(
+    int RecentFileLimit = 20,
+    bool ShowFullPathInTitle = true,
+    bool? RestoreOpenFilesOnStartup = null)
 {
     public EditorSettings Normalize() => this with
     {
-        RecentFileLimit = RecentFileLimit is >= 1 and <= 100 ? RecentFileLimit : 20
+        RecentFileLimit = RecentFileLimit is >= 1 and <= 100 ? RecentFileLimit : 20,
+        RestoreOpenFilesOnStartup = RestoreOpenFilesOnStartup ?? true
     };
 }
 

@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
 using ScintillaNET;
 using RuntimeArchitecture = System.Runtime.InteropServices.Architecture;
 
@@ -119,6 +120,30 @@ internal static class Program
             var sample = Path.Combine(Path.GetTempPath(), $"vi-text-editor-tab-smoke-{Guid.NewGuid():N}.txt");
             try
             {
+                var legacySettings = JsonSerializer.Deserialize<EditorSettings>(
+                    "{\"RecentFileLimit\":20,\"ShowFullPathInTitle\":true}")?.Normalize();
+                if (legacySettings?.RestoreOpenFilesOnStartup != true)
+                    return FinishWorkspaceTabSmokeTest(16, "Legacy settings did not default startup restoration to enabled.");
+
+                var disabledSettings = JsonSerializer.Deserialize<EditorSettings>(
+                    "{\"RecentFileLimit\":20,\"ShowFullPathInTitle\":true,\"RestoreOpenFilesOnStartup\":false}")?.Normalize();
+                if (disabledSettings?.RestoreOpenFilesOnStartup != false)
+                    return FinishWorkspaceTabSmokeTest(17, "Explicitly disabled startup restoration was not preserved.");
+
+                var disabledRestorePaths = EditorWorkspaceForm.BuildStartupPaths(
+                    ["previous.md"],
+                    ["requested.md"],
+                    restoreOpenFiles: false);
+                if (disabledRestorePaths.Length != 1 || disabledRestorePaths[0] != "requested.md")
+                    return FinishWorkspaceTabSmokeTest(14, $"Disabled restore included unexpected paths: {string.Join(" | ", disabledRestorePaths)}.");
+
+                var enabledRestorePaths = EditorWorkspaceForm.BuildStartupPaths(
+                    ["previous.md"],
+                    ["requested.md"],
+                    restoreOpenFiles: true);
+                if (!enabledRestorePaths.SequenceEqual(["previous.md", "requested.md"], StringComparer.OrdinalIgnoreCase))
+                    return FinishWorkspaceTabSmokeTest(15, $"Enabled restore lost startup paths: {string.Join(" | ", enabledRestorePaths)}.");
+
                 File.WriteAllText(sample, "workspace tab smoke test");
                 using var smokeWorkspace = new EditorWorkspaceForm(restorePreviousWorkspace: false);
                 smokeWorkspace.CreateControl();

@@ -44,10 +44,10 @@ internal sealed class EditorWorkspaceForm : Form
         var requestedPaths = startupPaths?
             .Where(path => !string.IsNullOrWhiteSpace(path))
             .ToArray() ?? [];
-        var paths = previousWorkspace.OpenFiles
-            .Concat(requestedPaths)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        var paths = BuildStartupPaths(
+            previousWorkspace.OpenFiles,
+            requestedPaths,
+            _settings.RestoreOpenFilesOnStartup == true);
         if (paths.Length == 0)
         {
             AddBlankEditorTab(select: true);
@@ -56,8 +56,22 @@ internal sealed class EditorWorkspaceForm : Form
         {
             foreach (var path in paths) OpenPath(path, select: false);
             if (_tabs.TabCount == 0) AddBlankEditorTab(select: true);
-            else SelectRestoredTab(previousWorkspace.SelectedFile, requestedPaths);
+            else SelectRestoredTab(
+                _settings.RestoreOpenFilesOnStartup == true ? previousWorkspace.SelectedFile : null,
+                requestedPaths);
         }
+    }
+
+    internal static string[] BuildStartupPaths(
+        IEnumerable<string> previousPaths,
+        IEnumerable<string> requestedPaths,
+        bool restoreOpenFiles)
+    {
+        var restoredPaths = restoreOpenFiles ? previousPaths : Enumerable.Empty<string>();
+        return restoredPaths
+            .Concat(requestedPaths)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private void RestoreWindowPlacement(WorkspaceState state)
@@ -105,7 +119,7 @@ internal sealed class EditorWorkspaceForm : Form
             MinimizeBox = false,
             MaximizeBox = false,
             ShowInTaskbar = false,
-            ClientSize = new Size(410, 155)
+            ClientSize = new Size(440, 200)
         };
         var recentLabel = new Label { Text = "最近使ったファイルの表示件数:", AutoSize = true, Location = new Point(18, 24) };
         var recentLimit = new NumericUpDown
@@ -123,14 +137,31 @@ internal sealed class EditorWorkspaceForm : Form
             Checked = _settings.ShowFullPathInTitle,
             Location = new Point(18, 62)
         };
-        var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Location = new Point(230, 108), Width = 75 };
-        var cancel = new Button { Text = "キャンセル", DialogResult = DialogResult.Cancel, Location = new Point(315, 108), Width = 80 };
-        dialog.Controls.AddRange([recentLabel, recentLimit, fullPath, ok, cancel]);
+        var restoreOpenFiles = new CheckBox
+        {
+            Text = "起動時に前回開いていたファイルを自動的に開く",
+            AutoSize = true,
+            Checked = _settings.RestoreOpenFilesOnStartup == true,
+            Location = new Point(18, 96)
+        };
+        var restartNote = new Label
+        {
+            Text = "※ 次回起動時から適用されます",
+            AutoSize = true,
+            ForeColor = SystemColors.GrayText,
+            Location = new Point(36, 122)
+        };
+        var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Location = new Point(260, 153), Width = 75 };
+        var cancel = new Button { Text = "キャンセル", DialogResult = DialogResult.Cancel, Location = new Point(345, 153), Width = 80 };
+        dialog.Controls.AddRange([recentLabel, recentLimit, fullPath, restoreOpenFiles, restartNote, ok, cancel]);
         dialog.AcceptButton = ok;
         dialog.CancelButton = cancel;
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
 
-        _settings = new EditorSettings((int)recentLimit.Value, fullPath.Checked).Normalize();
+        _settings = new EditorSettings(
+            (int)recentLimit.Value,
+            fullPath.Checked,
+            restoreOpenFiles.Checked).Normalize();
         _settingsStore.Save(_settings);
         _recentFiles.SetCapacity(_settings.RecentFileLimit);
         UpdateWorkspaceTitle();
@@ -496,12 +527,12 @@ internal sealed class EditorWorkspaceForm : Form
             ReplaceHelpItem(help, item => item.Text.Contains("バージョン情報", StringComparison.Ordinal),
                 new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show(
                     child,
-                    "vi_text_editor v0.1.45\nReliable Markdown list Enter behavior",
+                    "vi_text_editor v0.1.46\nConfigurable startup file restoration",
                     "バージョン情報",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information)));
             ReplaceHelpItem(help, item => item.Text.Contains("ワークスペース操作", StringComparison.Ordinal),
-                new ToolStripMenuItem("v0.1.45 ワークスペース操作", null, (_, _) => MessageBox.Show(
+                new ToolStripMenuItem("v0.1.46 ワークスペース操作", null, (_, _) => MessageBox.Show(
                     child,
                     "Ctrl+Shift+J: JSON整形\nCtrl+Shift+M: Markdownプレビュー\nCtrl+Tab / Ctrl+Shift+Tab: タブ切替\nCtrl+PageDown / Ctrl+PageUp: タブ切替\nタブ見出しのドラッグ＆ドロップ: 並べ替え\n\nMarkdown vi: j/k, Ctrl+F/B/D/U, gg/G, / ? n/N\nMarkdown COMMAND: :set ic / :set noic / :set ic?\nCtrl+マウスホイール: デバウンスされた拡大縮小\nURL: http:// / https:// をリンク表示し、シングルクリックで既定ブラウザから開く\n\nWindows: 二重起動せず、Shell起動／ドラッグ＆ドロップしたファイルを既存ウィンドウの新規タブで開く",
                     "ワークスペース操作",
