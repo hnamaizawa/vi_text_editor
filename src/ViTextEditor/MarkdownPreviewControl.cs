@@ -13,7 +13,7 @@ internal sealed class MarkdownPreviewControl : UserControl
     private readonly TextBox _command = new();
     private readonly Func<string> _markdownProvider;
     private readonly System.Windows.Forms.Timer _refreshTimer = new() { Interval = 150 };
-    private readonly MarkdownPipeline _pipeline = new MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
+    private readonly MarkdownPipeline _pipeline = new MarkdownPipelineBuilder().UseAdvancedExtensions().DisableHtml().Build();
     private readonly ViOptions _options = ViOptions.Shared;
     private IDisposable? _zoomFilter;
     private IDisposable? _commandPrefixFilter;
@@ -170,7 +170,13 @@ internal sealed class MarkdownPreviewControl : UserControl
 
     private void BrowserOnNavigating(object? sender, WebBrowserNavigatingEventArgs e)
     {
-        if (e.Url.Scheme is not ("http" or "https")) return;
+        if (e.Url.Scheme is not ("http" or "https"))
+        {
+            // Keep the preview's own about:blank document, but block file:, javascript:,
+            // data:, and every other scheme supplied by Markdown content.
+            e.Cancel = !string.Equals(e.Url.AbsoluteUri, "about:blank", StringComparison.OrdinalIgnoreCase);
+            return;
+        }
 
         e.Cancel = true;
         try
