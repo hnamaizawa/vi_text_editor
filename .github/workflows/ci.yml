@@ -59,7 +59,7 @@ jobs:
           }
       - name: Upload URL indicator smoke diagnostic
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: url-indicator-smoke-diagnostic
           path: ${{ runner.temp }}/url-indicator-smoke-result.txt
@@ -76,7 +76,7 @@ jobs:
           }
       - name: Upload Markdown list Enter smoke diagnostic
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: markdown-list-enter-smoke-diagnostic
           path: ${{ runner.temp }}/markdown-list-enter-smoke-result.txt
@@ -92,7 +92,7 @@ jobs:
           }
       - name: Upload workspace tab smoke diagnostic
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: workspace-tab-smoke-diagnostic
           path: ${{ runner.temp }}/workspace-tab-smoke-result.txt
@@ -130,7 +130,7 @@ jobs:
             if (-not $primary.HasExited) { Stop-Process -Id $primary.Id -Force }
           }
       - name: Upload portable Windows build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vi_text_editor-win-x64
           path: artifacts/vi_text_editor-win-x64/
@@ -210,7 +210,7 @@ jobs:
             if (-not $primary.HasExited) { Stop-Process -Id $primary.Id -Force }
           }
       - name: Upload single-file Windows executable
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vi_text_editor-win-x64-single-file
           path: artifacts/vi_text_editor-win-x64-single-file/vi_text_editor.exe
