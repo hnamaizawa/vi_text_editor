@@ -5,7 +5,8 @@ namespace ViTextEditor;
 internal sealed record EditorSettings(
     int RecentFileLimit = 20,
     bool ShowFullPathInTitle = true,
-    bool? RestoreOpenFilesOnStartup = null)
+    bool? RestoreOpenFilesOnStartup = null,
+    bool CsvExpandAllColumnText = false)
 {
     public EditorSettings Normalize() => this with
     {

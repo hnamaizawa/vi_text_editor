@@ -170,7 +170,7 @@ internal static class Program
                 if (protectedWorkspace.TabCountForSmokeTest != 2)
                     return FinishWorkspaceTabSmokeTest(12, $"Non-empty untitled tab was removed: count={protectedWorkspace.TabCountForSmokeTest}.");
 
-                File.WriteAllText(csvSample, "商品名,数量\r\nMTR,1\r\nコミック,7");
+                File.WriteAllText(csvSample, $"商品名,数量\r\n{new string('長', 80)},1\r\nコミック,7");
                 using var csvWorkspace = new EditorWorkspaceForm([csvSample], restorePreviousWorkspace: false);
                 csvWorkspace.CreateControl();
                 var csvViewer = csvWorkspace.OpenCsvViewerForSmokeTest();
@@ -180,6 +180,13 @@ internal static class Program
                 csvViewer.HandleKey(Keys.J);
                 if (csvViewer.CurrentCellForSmokeTest != new Point(1, 1))
                     return FinishWorkspaceTabSmokeTest(19, $"CSV vi navigation failed: cell={csvViewer.CurrentCellForSmokeTest}.");
+                csvViewer.HandleKey(Keys.Shift | Keys.D6);
+                if (csvViewer.CurrentCellForSmokeTest != new Point(0, 1))
+                    return FinishWorkspaceTabSmokeTest(20, $"CSV ^ navigation failed: cell={csvViewer.CurrentCellForSmokeTest}.");
+                var compactWidth = csvViewer.ColumnWidthForSmokeTest(0);
+                csvViewer.SetExpandAllColumnText(true);
+                if (csvViewer.ColumnWidthForSmokeTest(0) <= compactWidth)
+                    return FinishWorkspaceTabSmokeTest(21, "CSV expanded column mode did not reveal the full long value.");
 
                 return FinishWorkspaceTabSmokeTest(0, "PASS");
             }
