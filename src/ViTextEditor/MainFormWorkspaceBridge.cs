@@ -115,6 +115,7 @@ internal static class MainFormWorkspaceBridge
         var tools = new ToolStripMenuItem("ツール(&T)");
         tools.DropDownItems.Add(new ToolStripMenuItem("JSONを整形(&J)", null, (_, _) => FormatJson(form), Keys.Control | Keys.Shift | Keys.J));
         tools.DropDownItems.Add(new ToolStripMenuItem("Markdownプレビュー(&M)", null, (_, _) => workspace.OpenMarkdownPreview(form), Keys.Control | Keys.Shift | Keys.M));
+        tools.DropDownItems.Add(new ToolStripMenuItem("CSVビューア(&C)", null, (_, _) => workspace.OpenCsvViewer(form), Keys.Control | Keys.Shift | Keys.C));
         var helpIndex = menu.Items.OfType<ToolStripMenuItem>().Select((item, index) => (item, index)).FirstOrDefault(x => x.item.Text.Contains("ヘルプ", StringComparison.Ordinal)).index;
         menu.Items.Insert(helpIndex > 0 ? helpIndex : Math.Max(0, menu.Items.Count - 1), tools);
     }

@@ -118,6 +118,7 @@ internal static class Program
             }
 
             var sample = Path.Combine(Path.GetTempPath(), $"vi-text-editor-tab-smoke-{Guid.NewGuid():N}.txt");
+            var csvSample = Path.Combine(Path.GetTempPath(), $"vi-text-editor-csv-smoke-{Guid.NewGuid():N}.csv");
             try
             {
                 var legacySettings = JsonSerializer.Deserialize<EditorSettings>(
@@ -166,9 +167,21 @@ internal static class Program
                 if (!protectedWorkspace.TypeIntoSelectedEditorForSmokeTest("keep me"))
                     return FinishWorkspaceTabSmokeTest(11, "Could not type into the selected untitled editor.");
                 protectedWorkspace.OpenPath(sample);
-                return protectedWorkspace.TabCountForSmokeTest == 2
-                    ? FinishWorkspaceTabSmokeTest(0, "PASS")
-                    : FinishWorkspaceTabSmokeTest(12, $"Non-empty untitled tab was removed: count={protectedWorkspace.TabCountForSmokeTest}.");
+                if (protectedWorkspace.TabCountForSmokeTest != 2)
+                    return FinishWorkspaceTabSmokeTest(12, $"Non-empty untitled tab was removed: count={protectedWorkspace.TabCountForSmokeTest}.");
+
+                File.WriteAllText(csvSample, "商品名,数量\r\nMTR,1\r\nコミック,7");
+                using var csvWorkspace = new EditorWorkspaceForm([csvSample], restorePreviousWorkspace: false);
+                csvWorkspace.CreateControl();
+                var csvViewer = csvWorkspace.OpenCsvViewerForSmokeTest();
+                if (csvViewer is null || csvViewer.RowCountForSmokeTest != 3 || csvViewer.ColumnCountForSmokeTest != 2)
+                    return FinishWorkspaceTabSmokeTest(18, $"CSV viewer shape mismatch: rows={csvViewer?.RowCountForSmokeTest}, columns={csvViewer?.ColumnCountForSmokeTest}.");
+                csvViewer.HandleKey(Keys.L);
+                csvViewer.HandleKey(Keys.J);
+                if (csvViewer.CurrentCellForSmokeTest != new Point(1, 1))
+                    return FinishWorkspaceTabSmokeTest(19, $"CSV vi navigation failed: cell={csvViewer.CurrentCellForSmokeTest}.");
+
+                return FinishWorkspaceTabSmokeTest(0, "PASS");
             }
             catch (Exception ex)
             {
@@ -177,6 +190,8 @@ internal static class Program
             finally
             {
                 try { File.Delete(sample); }
+                catch { }
+                try { File.Delete(csvSample); }
                 catch { }
             }
         }

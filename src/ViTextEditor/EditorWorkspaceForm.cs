@@ -386,6 +386,22 @@ internal sealed class EditorWorkspaceForm : Form
         return true;
     }
 
+    internal CsvViewerControl? OpenCsvViewerForSmokeTest()
+    {
+        if (_tabs.SelectedTab is not { } page ||
+            !_sessions.TryGetValue(page, out var session) ||
+            session.EditorForm is not { IsDisposed: false } form)
+        {
+            return null;
+        }
+
+        OpenCsvViewer(form);
+        return _tabs.SelectedTab is { } viewerPage &&
+               _sessions.TryGetValue(viewerPage, out var viewerSession)
+            ? viewerSession.CsvViewer
+            : null;
+    }
+
     public void OpenMarkdownPreview(MainForm source)
     {
         var editor = MainFormWorkspaceBridge.GetEditor(source);
@@ -399,9 +415,28 @@ internal sealed class EditorWorkspaceForm : Form
         preview.Disposed += (_, _) => editor.TextChanged -= sourceTextChanged;
         page.Controls.Add(preview);
         _tabs.TabPages.Add(page);
-        _sessions[page] = new WorkspaceTab(WorkspaceTabKind.MarkdownPreview, null, null, preview, null);
+        _sessions[page] = new WorkspaceTab(WorkspaceTabKind.MarkdownPreview, null, null, preview, null, null);
         _tabs.SelectedTab = page;
         preview.FocusViewer();
+        UpdateWorkspaceTitle();
+    }
+
+    public void OpenCsvViewer(MainForm source)
+    {
+        var editor = MainFormWorkspaceBridge.GetEditor(source);
+        if (editor is null) return;
+        var sourcePath = MainFormWorkspaceBridge.GetFilePath(source);
+        var sourceName = sourcePath is null ? "無題" : Path.GetFileName(sourcePath);
+        var page = new TabPage($"{sourceName} [CSV]");
+        var viewer = new CsvViewerControl(sourceName, () => source.IsDisposed ? string.Empty : editor.Text);
+        EventHandler sourceTextChanged = (_, _) => viewer.QueueRefresh();
+        editor.TextChanged += sourceTextChanged;
+        viewer.Disposed += (_, _) => editor.TextChanged -= sourceTextChanged;
+        page.Controls.Add(viewer);
+        _tabs.TabPages.Add(page);
+        _sessions[page] = new WorkspaceTab(WorkspaceTabKind.CsvViewer, null, null, null, viewer, null);
+        _tabs.SelectedTab = page;
+        viewer.FocusViewer();
         UpdateWorkspaceTitle();
     }
 
@@ -421,6 +456,7 @@ internal sealed class EditorWorkspaceForm : Form
             _sessions.TryGetValue(current, out var currentSession))
         {
             currentSession.MarkdownPreview?.CancelCommandInput();
+            currentSession.CsvViewer?.CancelCommandInput();
         }
 
         var next = (_tabs.SelectedIndex + delta) % _tabs.TabCount;
@@ -456,7 +492,7 @@ internal sealed class EditorWorkspaceForm : Form
         page.Controls.Add(child);
         _tabs.TabPages.Add(page);
 
-        var session = new WorkspaceTab(WorkspaceTabKind.Editor, path, child, null, null);
+        var session = new WorkspaceTab(WorkspaceTabKind.Editor, path, child, null, null, null);
         _sessions[page] = session;
         MainFormWorkspaceBridge.Install(child, this);
         ConfigureEmbeddedEditor(child);
@@ -527,6 +563,11 @@ internal sealed class EditorWorkspaceForm : Form
                     item.ShortcutKeys = Keys.None;
                     item.ShortcutKeyDisplayString = "Ctrl+Shift+M";
                 }
+                else if (item.Text.StartsWith("CSVビューア", StringComparison.Ordinal))
+                {
+                    item.ShortcutKeys = Keys.None;
+                    item.ShortcutKeyDisplayString = "Ctrl+Shift+C";
+                }
             }
         }
 
@@ -537,14 +578,14 @@ internal sealed class EditorWorkspaceForm : Form
             ReplaceHelpItem(help, item => item.Text.Contains("バージョン情報", StringComparison.Ordinal),
                 new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show(
                     child,
-                    "vi_text_editor v0.1.47\nImproved settings dialog layout",
+                    "vi_text_editor v0.1.48\nCSV table viewer with vi navigation",
                     "バージョン情報",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information)));
             ReplaceHelpItem(help, item => item.Text.Contains("ワークスペース操作", StringComparison.Ordinal),
-                new ToolStripMenuItem("v0.1.47 ワークスペース操作", null, (_, _) => MessageBox.Show(
+                new ToolStripMenuItem("v0.1.48 ワークスペース操作", null, (_, _) => MessageBox.Show(
                     child,
-                    "Ctrl+Shift+J: JSON整形\nCtrl+Shift+M: Markdownプレビュー\nCtrl+Tab / Ctrl+Shift+Tab: タブ切替\nCtrl+PageDown / Ctrl+PageUp: タブ切替\nタブ見出しのドラッグ＆ドロップ: 並べ替え\n\nMarkdown vi: j/k, Ctrl+F/B/D/U, gg/G, / ? n/N\nMarkdown COMMAND: :set ic / :set noic / :set ic?\nCtrl+マウスホイール: デバウンスされた拡大縮小\nURL: http:// / https:// をリンク表示し、シングルクリックで既定ブラウザから開く\n\nWindows: 二重起動せず、Shell起動／ドラッグ＆ドロップしたファイルを既存ウィンドウの新規タブで開く",
+                    "Ctrl+Shift+J: JSON整形\nCtrl+Shift+M: Markdownプレビュー\nCtrl+Shift+C: CSVビューア\nCtrl+Tab / Ctrl+Shift+Tab: タブ切替\nCtrl+PageDown / Ctrl+PageUp: タブ切替\nタブ見出しのドラッグ＆ドロップ: 並べ替え\n\nMarkdown vi: j/k, Ctrl+F/B/D/U, gg/G, / ? n/N\nCSV vi: h/j/k/l, gg/G, 0/$, Ctrl+F/B/D/U, / ? n/N\nViewer COMMAND: :set ic / :set noic / :set ic?\nCtrl+マウスホイール: デバウンスされた拡大縮小\nURL: http:// / https:// をリンク表示し、シングルクリックで既定ブラウザから開く\n\nWindows: 二重起動せず、Shell起動／ドラッグ＆ドロップしたファイルを既存ウィンドウの新規タブで開く",
                     "ワークスペース操作",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information)));
@@ -589,7 +630,7 @@ internal sealed class EditorWorkspaceForm : Form
         var viewer = new LargeTextViewerControl();
         page.Controls.Add(viewer);
         _tabs.TabPages.Add(page);
-        var session = new WorkspaceTab(WorkspaceTabKind.LargeFile, path, null, null, viewer);
+        var session = new WorkspaceTab(WorkspaceTabKind.LargeFile, path, null, null, null, viewer);
         _sessions[page] = session;
 
         Cursor = Cursors.WaitCursor;
@@ -702,6 +743,11 @@ internal sealed class EditorWorkspaceForm : Form
             preview.FocusViewer();
             return;
         }
+        if (session.CsvViewer is { IsDisposed: false } csv)
+        {
+            csv.FocusViewer();
+            return;
+        }
         if (session.LargeViewer is { IsDisposed: false } large)
         {
             large.FocusViewer();
@@ -727,11 +773,20 @@ internal sealed class EditorWorkspaceForm : Form
         // hidden tab MenuStrip shortcut collisions.
         if (keyData == (Keys.Control | Keys.Shift | Keys.J) && InvokeActiveEditorTool("JSONを整形")) return true;
         if (keyData == (Keys.Control | Keys.Shift | Keys.M) && InvokeActiveEditorTool("Markdownプレビュー")) return true;
+        if (keyData == (Keys.Control | Keys.Shift | Keys.C) && InvokeActiveEditorTool("CSVビューア")) return true;
 
         if (_tabs.SelectedTab is { } selected &&
             _sessions.TryGetValue(selected, out var session) &&
             session.MarkdownPreview is { } preview &&
             preview.HandleKey(keyData))
+        {
+            return true;
+        }
+
+        if (_tabs.SelectedTab is { } csvSelected &&
+            _sessions.TryGetValue(csvSelected, out var csvSession) &&
+            csvSession.CsvViewer is { } csvViewer &&
+            csvViewer.HandleKey(keyData))
         {
             return true;
         }
@@ -800,19 +855,21 @@ internal sealed class EditorWorkspaceForm : Form
             WindowState == FormWindowState.Maximized);
     }
 
-    private enum WorkspaceTabKind { Editor, LargeFile, MarkdownPreview }
+    private enum WorkspaceTabKind { Editor, LargeFile, MarkdownPreview, CsvViewer }
 
     private sealed class WorkspaceTab(
         WorkspaceTabKind kind,
         string? filePath,
         MainForm? editorForm,
         MarkdownPreviewControl? markdownPreview,
+        CsvViewerControl? csvViewer,
         LargeTextViewerControl? largeViewer)
     {
         public WorkspaceTabKind Kind { get; } = kind;
         public string? FilePath { get; set; } = filePath;
         public MainForm? EditorForm { get; } = editorForm;
         public MarkdownPreviewControl? MarkdownPreview { get; } = markdownPreview;
+        public CsvViewerControl? CsvViewer { get; } = csvViewer;
         public LargeTextViewerControl? LargeViewer { get; } = largeViewer;
         public IDisposable? ZoomFilter { get; set; }
     }
