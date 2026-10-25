@@ -120,7 +120,7 @@ internal sealed class EditorWorkspaceForm : Form
             MaximizeBox = false,
             ShowInTaskbar = false,
             AutoScaleMode = AutoScaleMode.Dpi,
-            ClientSize = new Size(480, 250)
+            ClientSize = new Size(520, 292)
         };
         var recentLabel = new Label { Text = "最近使ったファイルの表示件数:", AutoSize = true, Location = new Point(18, 24) };
         var recentLimit = new NumericUpDown
@@ -152,6 +152,20 @@ internal sealed class EditorWorkspaceForm : Form
             ForeColor = SystemColors.GrayText,
             Location = new Point(36, 122)
         };
+        var csvExpandAllColumns = new CheckBox
+        {
+            Text = "CSVビューアですべての列名とデータを省略せず表示する",
+            AutoSize = true,
+            Checked = _settings.CsvExpandAllColumnText,
+            Location = new Point(18, 158)
+        };
+        var csvNote = new Label
+        {
+            Text = "※ 大きなCSVでは表示更新に時間がかかる場合があります",
+            AutoSize = true,
+            ForeColor = SystemColors.GrayText,
+            Location = new Point(36, 184)
+        };
         var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Size = new Size(92, 32), Margin = new Padding(8, 0, 0, 0) };
         var cancel = new Button { Text = "キャンセル", DialogResult = DialogResult.Cancel, Size = new Size(92, 32), Margin = new Padding(8, 0, 0, 0) };
         var buttonPanel = new FlowLayoutPanel
@@ -163,7 +177,7 @@ internal sealed class EditorWorkspaceForm : Form
             Padding = new Padding(0, 14, 18, 10)
         };
         buttonPanel.Controls.AddRange([cancel, ok]);
-        dialog.Controls.AddRange([recentLabel, recentLimit, fullPath, restoreOpenFiles, restartNote, buttonPanel]);
+        dialog.Controls.AddRange([recentLabel, recentLimit, fullPath, restoreOpenFiles, restartNote, csvExpandAllColumns, csvNote, buttonPanel]);
         dialog.AcceptButton = ok;
         dialog.CancelButton = cancel;
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
@@ -171,9 +185,12 @@ internal sealed class EditorWorkspaceForm : Form
         _settings = new EditorSettings(
             (int)recentLimit.Value,
             fullPath.Checked,
-            restoreOpenFiles.Checked).Normalize();
+            restoreOpenFiles.Checked,
+            csvExpandAllColumns.Checked).Normalize();
         _settingsStore.Save(_settings);
         _recentFiles.SetCapacity(_settings.RecentFileLimit);
+        foreach (var viewer in _sessions.Values.Select(session => session.CsvViewer).Where(viewer => viewer is { IsDisposed: false }))
+            viewer!.SetExpandAllColumnText(_settings.CsvExpandAllColumnText);
         UpdateWorkspaceTitle();
     }
 
@@ -428,7 +445,10 @@ internal sealed class EditorWorkspaceForm : Form
         var sourcePath = MainFormWorkspaceBridge.GetFilePath(source);
         var sourceName = sourcePath is null ? "無題" : Path.GetFileName(sourcePath);
         var page = new TabPage($"{sourceName} [CSV]");
-        var viewer = new CsvViewerControl(sourceName, () => source.IsDisposed ? string.Empty : editor.Text);
+        var viewer = new CsvViewerControl(
+            sourceName,
+            () => source.IsDisposed ? string.Empty : editor.Text,
+            _settings.CsvExpandAllColumnText);
         EventHandler sourceTextChanged = (_, _) => viewer.QueueRefresh();
         editor.TextChanged += sourceTextChanged;
         viewer.Disposed += (_, _) => editor.TextChanged -= sourceTextChanged;
@@ -578,14 +598,14 @@ internal sealed class EditorWorkspaceForm : Form
             ReplaceHelpItem(help, item => item.Text.Contains("バージョン情報", StringComparison.Ordinal),
                 new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show(
                     child,
-                    "vi_text_editor v0.1.48\nCSV table viewer with vi navigation",
+                    "vi_text_editor v0.1.49\nConfigurable CSV column expansion and ^ navigation",
                     "バージョン情報",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information)));
             ReplaceHelpItem(help, item => item.Text.Contains("ワークスペース操作", StringComparison.Ordinal),
-                new ToolStripMenuItem("v0.1.48 ワークスペース操作", null, (_, _) => MessageBox.Show(
+                new ToolStripMenuItem("v0.1.49 ワークスペース操作", null, (_, _) => MessageBox.Show(
                     child,
-                    "Ctrl+Shift+J: JSON整形\nCtrl+Shift+M: Markdownプレビュー\nCtrl+Shift+C: CSVビューア\nCtrl+Tab / Ctrl+Shift+Tab: タブ切替\nCtrl+PageDown / Ctrl+PageUp: タブ切替\nタブ見出しのドラッグ＆ドロップ: 並べ替え\n\nMarkdown vi: j/k, Ctrl+F/B/D/U, gg/G, / ? n/N\nCSV vi: h/j/k/l, gg/G, 0/$, Ctrl+F/B/D/U, / ? n/N\nViewer COMMAND: :set ic / :set noic / :set ic?\nCtrl+マウスホイール: デバウンスされた拡大縮小\nURL: http:// / https:// をリンク表示し、シングルクリックで既定ブラウザから開く\n\nWindows: 二重起動せず、Shell起動／ドラッグ＆ドロップしたファイルを既存ウィンドウの新規タブで開く",
+                    "Ctrl+Shift+J: JSON整形\nCtrl+Shift+M: Markdownプレビュー\nCtrl+Shift+C: CSVビューア\nCtrl+Tab / Ctrl+Shift+Tab: タブ切替\nCtrl+PageDown / Ctrl+PageUp: タブ切替\nタブ見出しのドラッグ＆ドロップ: 並べ替え\n\nMarkdown vi: j/k, Ctrl+F/B/D/U, gg/G, / ? n/N\nCSV vi: h/j/k/l, gg/G, 0/^/$, Ctrl+F/B/D/U, / ? n/N\nViewer COMMAND: :set ic / :set noic / :set ic?\nCtrl+マウスホイール: デバウンスされた拡大縮小\nURL: http:// / https:// をリンク表示し、シングルクリックで既定ブラウザから開く\n\nWindows: 二重起動せず、Shell起動／ドラッグ＆ドロップしたファイルを既存ウィンドウの新規タブで開く",
                     "ワークスペース操作",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information)));

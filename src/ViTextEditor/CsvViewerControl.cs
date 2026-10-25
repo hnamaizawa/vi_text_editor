@@ -19,10 +19,12 @@ internal sealed class CsvViewerControl : UserControl
     private string? _lastSearch;
     private bool _lastSearchForward = true;
     private bool _lastSearchIgnoreCase;
+    private bool _expandAllColumnText;
 
-    public CsvViewerControl(string sourceName, Func<string> csvProvider)
+    public CsvViewerControl(string sourceName, Func<string> csvProvider, bool expandAllColumnText = false)
     {
         _csvProvider = csvProvider;
+        _expandAllColumnText = expandAllColumnText;
         Dock = DockStyle.Fill;
 
         _sourceLabel.Text = sourceName;
@@ -32,7 +34,7 @@ internal sealed class CsvViewerControl : UserControl
         _toolbar.Items.Add(new ToolStripSeparator());
         _toolbar.Items.Add(_sourceLabel);
         _toolbar.Items.Add(new ToolStripSeparator());
-        _toolbar.Items.Add(new ToolStripLabel("vi: h/j/k/l  gg/G  0/$  Ctrl+F/B/D/U  / ? n/N"));
+        _toolbar.Items.Add(new ToolStripLabel("vi: h/j/k/l  gg/G  0/^/$  Ctrl+F/B/D/U  / ? n/N"));
         _toolbar.Items.Add(_statusLabel);
         _toolbar.Dock = DockStyle.Top;
 
@@ -79,6 +81,14 @@ internal sealed class CsvViewerControl : UserControl
     internal int RowCountForSmokeTest => _grid.RowCount;
     internal int ColumnCountForSmokeTest => _grid.ColumnCount;
     internal Point CurrentCellForSmokeTest => new(CurrentColumn(), CurrentRow());
+    internal int ColumnWidthForSmokeTest(int column) => _grid.Columns[column].Width;
+
+    public void SetExpandAllColumnText(bool enabled)
+    {
+        if (_expandAllColumnText == enabled) return;
+        _expandAllColumnText = enabled;
+        RefreshView();
+    }
 
     public void QueueRefresh()
     {
@@ -177,6 +187,7 @@ internal sealed class CsvViewerControl : UserControl
             case Keys.N: RepeatSearch(reverse: shift); return true;
             case Keys.D0:
             case Keys.NumPad0: MoveTo(CurrentRow(), 0); return true;
+            case Keys.D6 when shift: MoveTo(CurrentRow(), 0); return true;
             case Keys.D4 when shift: MoveTo(CurrentRow(), _grid.ColumnCount - 1); return true;
         }
         return false;
@@ -193,6 +204,11 @@ internal sealed class CsvViewerControl : UserControl
         else if (e.KeyChar == '$')
         {
             MoveTo(CurrentRow(), _grid.ColumnCount - 1);
+            e.Handled = true;
+        }
+        else if (e.KeyChar == '^')
+        {
+            MoveTo(CurrentRow(), 0);
             e.Handled = true;
         }
     }
@@ -298,11 +314,27 @@ internal sealed class CsvViewerControl : UserControl
 
     private int CalculateColumnWidth(int column)
     {
+        if (_expandAllColumnText)
+        {
+            var width = MeasureCellWidth((column + 1).ToString(), _grid.ColumnHeadersDefaultCellStyle.Font ?? _grid.Font);
+            foreach (var row in _rows)
+            {
+                if (column >= row.Count) continue;
+                foreach (var line in row[column].Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+                    width = Math.Max(width, MeasureCellWidth(line, _grid.Font));
+            }
+            return Math.Clamp(width + 28, 100, 65_536);
+        }
+
         var max = (column + 1).ToString().Length;
         foreach (var row in _rows.Take(200))
             if (column < row.Count) max = Math.Max(max, row[column].Length);
         return Math.Clamp(max * 11 + 28, 100, 420);
     }
+
+    private static int MeasureCellWidth(string text, Font font) =>
+        TextRenderer.MeasureText(text.Length == 0 ? " " : text, font, Size.Empty,
+            TextFormatFlags.NoPadding | TextFormatFlags.SingleLine).Width;
 
     private void GridOnRowPostPaint(object? sender, DataGridViewRowPostPaintEventArgs e)
     {
