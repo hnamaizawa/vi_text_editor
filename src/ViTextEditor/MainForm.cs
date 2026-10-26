@@ -648,6 +648,40 @@ public sealed class MainForm : Form
                 return 1;
             }
 
+            LoadTextIntoEditor("- aaa");
+            _loading = true;
+            _editor.GotoPosition(_editor.TextLength);
+            var siblingEnter = new KeyEventArgs(Keys.Shift | Keys.Enter);
+            EditorOnKeyDown(_editor, siblingEnter);
+            if (!siblingEnter.Handled || !siblingEnter.SuppressKeyPress ||
+                _editor.Text != "- aaa\r\n- " ||
+                _editor.CurrentPosition != _editor.TextLength)
+            {
+                diagnostic = $"Shift+Enter sibling continuation failed: text={EscapeForDiagnostic(_editor.Text)}, " +
+                             $"caret={_editor.CurrentPosition}, handled={siblingEnter.Handled}, suppressed={siblingEnter.SuppressKeyPress}.";
+                return 4;
+            }
+
+            LoadTextIntoEditor("- aaa\r\n  - bbb");
+            _loading = true;
+            _editor.GotoPosition(_editor.TextLength);
+            var nestedSiblingEnter = new KeyEventArgs(Keys.Shift | Keys.Enter);
+            EditorOnKeyDown(_editor, nestedSiblingEnter);
+            if (!nestedSiblingEnter.Handled || !nestedSiblingEnter.SuppressKeyPress ||
+                _editor.Text != "- aaa\r\n  - bbb\r\n  - " ||
+                _editor.CurrentPosition != _editor.TextLength)
+            {
+                diagnostic = $"Nested Shift+Enter sibling continuation failed: text={EscapeForDiagnostic(_editor.Text)}, " +
+                             $"caret={_editor.CurrentPosition}, handled={nestedSiblingEnter.Handled}, suppressed={nestedSiblingEnter.SuppressKeyPress}.";
+                return 5;
+            }
+
+            LoadTextIntoEditor("- aaa");
+            _loading = true;
+            _editor.GotoPosition(_editor.TextLength);
+            _vi.Handle("i");
+            contentEnter = new KeyEventArgs(Keys.Enter);
+            EditorOnKeyDown(_editor, contentEnter);
             _editor.AddText("bbb");
             var nestedEnter = new KeyEventArgs(Keys.Enter);
             EditorOnKeyDown(_editor, nestedEnter);
@@ -745,21 +779,21 @@ public sealed class MainForm : Form
 
     private bool TryInsertMarkdownListContinuation(KeyEventArgs e)
     {
-        if (e.KeyCode != Keys.Enter || e.Control || e.Alt || e.Shift ||
+        if (e.KeyCode != Keys.Enter || e.Control || e.Alt ||
             _referenceMode || _vi.Mode != EditorMode.Insert ||
             SyntaxLanguageDetector.Detect(_filePath) != SyntaxLanguage.Markdown)
         {
             return false;
         }
 
-        if (!TryApplyMarkdownListEnter()) return false;
+        if (!TryApplyMarkdownListEnter(sameIndent: e.Shift)) return false;
 
         e.Handled = true;
         e.SuppressKeyPress = true;
         return true;
     }
 
-    private bool TryApplyMarkdownListEnter()
+    private bool TryApplyMarkdownListEnter(bool sameIndent)
     {
         var lineNumber = _editor.LineFromPosition(_editor.CurrentPosition);
         if (lineNumber < 0 || lineNumber >= _editor.Lines.Count) return false;
@@ -769,7 +803,11 @@ public sealed class MainForm : Form
         // Preserve the original, proven continuation path for every list item
         // containing text. Only evaluate empty-item termination if continuation
         // does not apply.
-        if (MarkdownListContinuation.TryCreatePrefix(lineText, out var prefix))
+        string prefix;
+        var hasPrefix = sameIndent
+            ? MarkdownListContinuation.TryCreateSiblingPrefix(lineText, out prefix)
+            : MarkdownListContinuation.TryCreatePrefix(lineText, out prefix);
+        if (hasPrefix)
         {
             _editor.BeginUndoAction();
             try

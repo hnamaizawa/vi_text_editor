@@ -23,6 +23,19 @@ public static class MarkdownListContinuation
         return true;
     }
 
+    public static bool TryCreateSiblingPrefix(string lineText, out string prefix)
+    {
+        prefix = string.Empty;
+        if (lineText is null) return false;
+
+        var marker = FindListMarker(lineText);
+        if (marker < 0) return false;
+        if (lineText[(marker + 1)..].All(char.IsWhiteSpace)) return false;
+
+        prefix = lineText[..marker] + "- ";
+        return true;
+    }
+
     private static int FindListMarker(string lineText)
     {
         var marker = 0;
