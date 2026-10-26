@@ -33,6 +33,29 @@ public sealed class MarkdownListContinuationTests
     }
 
     [Theory]
+    [InlineData("- item", "- ")]
+    [InlineData("  - item", "  - ")]
+    [InlineData("\t- item", "\t- ")]
+    [InlineData("    - 日本語", "    - ")]
+    public void TryCreateSiblingPrefix_PreservesCurrentIndentation(string line, string expected)
+    {
+        Assert.True(MarkdownListContinuation.TryCreateSiblingPrefix(line, out var prefix));
+        Assert.Equal(expected, prefix);
+    }
+
+    [Theory]
+    [InlineData("plain text")]
+    [InlineData("-not-a-list")]
+    [InlineData("-")]
+    [InlineData("- ")]
+    [InlineData("  -   ")]
+    public void TryCreateSiblingPrefix_IgnoresNonListAndEmptyItems(string line)
+    {
+        Assert.False(MarkdownListContinuation.TryCreateSiblingPrefix(line, out var prefix));
+        Assert.Empty(prefix);
+    }
+
+    [Theory]
     [InlineData("-")]
     [InlineData("- ")]
     [InlineData("  -   ")]
