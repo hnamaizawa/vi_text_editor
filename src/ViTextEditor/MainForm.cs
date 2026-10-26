@@ -786,14 +786,26 @@ public sealed class MainForm : Form
             return false;
         }
 
-        if (!TryApplyMarkdownListEnter(sameIndent: e.Shift)) return false;
+        // Keep Shift+Enter completely separate from the proven plain-Enter
+        // path below. This prevents the sibling-list feature from changing
+        // normal Markdown auto-indent behavior.
+        if (e.Shift)
+        {
+            if (!TryApplyMarkdownSiblingListEnter()) return false;
+
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+            return true;
+        }
+
+        if (!TryApplyMarkdownListEnter()) return false;
 
         e.Handled = true;
         e.SuppressKeyPress = true;
         return true;
     }
 
-    private bool TryApplyMarkdownListEnter(bool sameIndent)
+    private bool TryApplyMarkdownListEnter()
     {
         var lineNumber = _editor.LineFromPosition(_editor.CurrentPosition);
         if (lineNumber < 0 || lineNumber >= _editor.Lines.Count) return false;
@@ -803,11 +815,7 @@ public sealed class MainForm : Form
         // Preserve the original, proven continuation path for every list item
         // containing text. Only evaluate empty-item termination if continuation
         // does not apply.
-        string prefix;
-        var hasPrefix = sameIndent
-            ? MarkdownListContinuation.TryCreateSiblingPrefix(lineText, out prefix)
-            : MarkdownListContinuation.TryCreatePrefix(lineText, out prefix);
-        if (hasPrefix)
+        if (MarkdownListContinuation.TryCreatePrefix(lineText, out var prefix))
         {
             _editor.BeginUndoAction();
             try
@@ -837,6 +845,29 @@ public sealed class MainForm : Form
             _editor.SetSelection(line.Position + lineText.Length, line.Position);
             _editor.ReplaceSelection(string.Empty);
             _editor.GotoPosition(line.Position);
+        }
+        finally
+        {
+            _editor.EndUndoAction();
+        }
+
+        return true;
+    }
+
+    private bool TryApplyMarkdownSiblingListEnter()
+    {
+        var lineNumber = _editor.LineFromPosition(_editor.CurrentPosition);
+        if (lineNumber < 0 || lineNumber >= _editor.Lines.Count) return false;
+        var lineText = _editor.Lines[lineNumber].Text.TrimEnd('\r', '\n');
+        if (!MarkdownListContinuation.TryCreateSiblingPrefix(lineText, out var prefix)) return false;
+
+        _editor.BeginUndoAction();
+        try
+        {
+            _editor.ReplaceSelection(_newLine);
+            var prefixPosition = _editor.CurrentPosition;
+            _editor.InsertText(prefixPosition, prefix);
+            _editor.GotoPosition(prefixPosition + Encoding.UTF8.GetByteCount(prefix));
         }
         finally
         {
