@@ -419,6 +419,22 @@ internal sealed class EditorWorkspaceForm : Form
             : null;
     }
 
+    internal XmlViewerControl? OpenXmlViewerForSmokeTest()
+    {
+        if (_tabs.SelectedTab is not { } page ||
+            !_sessions.TryGetValue(page, out var session) ||
+            session.EditorForm is not { IsDisposed: false } form)
+        {
+            return null;
+        }
+
+        OpenXmlViewer(form);
+        return _tabs.SelectedTab is { } viewerPage &&
+               _sessions.TryGetValue(viewerPage, out var viewerSession)
+            ? viewerSession.XmlViewer
+            : null;
+    }
+
     public void OpenMarkdownPreview(MainForm source)
     {
         var editor = MainFormWorkspaceBridge.GetEditor(source);
@@ -432,7 +448,7 @@ internal sealed class EditorWorkspaceForm : Form
         preview.Disposed += (_, _) => editor.TextChanged -= sourceTextChanged;
         page.Controls.Add(preview);
         _tabs.TabPages.Add(page);
-        _sessions[page] = new WorkspaceTab(WorkspaceTabKind.MarkdownPreview, null, null, preview, null, null);
+        _sessions[page] = new WorkspaceTab(WorkspaceTabKind.MarkdownPreview, null, null, preview, null, null, null);
         _tabs.SelectedTab = page;
         preview.FocusViewer();
         UpdateWorkspaceTitle();
@@ -454,7 +470,28 @@ internal sealed class EditorWorkspaceForm : Form
         viewer.Disposed += (_, _) => editor.TextChanged -= sourceTextChanged;
         page.Controls.Add(viewer);
         _tabs.TabPages.Add(page);
-        _sessions[page] = new WorkspaceTab(WorkspaceTabKind.CsvViewer, null, null, null, viewer, null);
+        _sessions[page] = new WorkspaceTab(WorkspaceTabKind.CsvViewer, null, null, null, viewer, null, null);
+        _tabs.SelectedTab = page;
+        viewer.FocusViewer();
+        UpdateWorkspaceTitle();
+    }
+
+    public void OpenXmlViewer(MainForm source)
+    {
+        var editor = MainFormWorkspaceBridge.GetEditor(source);
+        if (editor is null) return;
+        var sourcePath = MainFormWorkspaceBridge.GetFilePath(source);
+        var sourceName = sourcePath is null ? "無題" : Path.GetFileName(sourcePath);
+        var page = new TabPage($"{sourceName} [XML]");
+        var viewer = new XmlViewerControl(
+            sourceName,
+            () => source.IsDisposed ? string.Empty : editor.Text);
+        EventHandler sourceTextChanged = (_, _) => viewer.QueueRefresh();
+        editor.TextChanged += sourceTextChanged;
+        viewer.Disposed += (_, _) => editor.TextChanged -= sourceTextChanged;
+        page.Controls.Add(viewer);
+        _tabs.TabPages.Add(page);
+        _sessions[page] = new WorkspaceTab(WorkspaceTabKind.XmlViewer, null, null, null, null, viewer, null);
         _tabs.SelectedTab = page;
         viewer.FocusViewer();
         UpdateWorkspaceTitle();
@@ -477,6 +514,7 @@ internal sealed class EditorWorkspaceForm : Form
         {
             currentSession.MarkdownPreview?.CancelCommandInput();
             currentSession.CsvViewer?.CancelCommandInput();
+            currentSession.XmlViewer?.CancelCommandInput();
         }
 
         var next = (_tabs.SelectedIndex + delta) % _tabs.TabCount;
@@ -512,7 +550,7 @@ internal sealed class EditorWorkspaceForm : Form
         page.Controls.Add(child);
         _tabs.TabPages.Add(page);
 
-        var session = new WorkspaceTab(WorkspaceTabKind.Editor, path, child, null, null, null);
+        var session = new WorkspaceTab(WorkspaceTabKind.Editor, path, child, null, null, null, null);
         _sessions[page] = session;
         MainFormWorkspaceBridge.Install(child, this);
         ConfigureEmbeddedEditor(child);
@@ -588,6 +626,11 @@ internal sealed class EditorWorkspaceForm : Form
                     item.ShortcutKeys = Keys.None;
                     item.ShortcutKeyDisplayString = "Ctrl+Shift+C";
                 }
+                else if (item.Text.StartsWith("XMLビューア", StringComparison.Ordinal))
+                {
+                    item.ShortcutKeys = Keys.None;
+                    item.ShortcutKeyDisplayString = "Ctrl+Shift+X";
+                }
             }
         }
 
@@ -598,14 +641,14 @@ internal sealed class EditorWorkspaceForm : Form
             ReplaceHelpItem(help, item => item.Text.Contains("バージョン情報", StringComparison.Ordinal),
                 new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show(
                     child,
-                    "vi_text_editor v0.1.52\nVim-compatible Unicode word and character ranges",
+                    "vi_text_editor v0.1.53\nXML tree viewer with vi navigation",
                     "バージョン情報",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information)));
             ReplaceHelpItem(help, item => item.Text.Contains("ワークスペース操作", StringComparison.Ordinal),
-                new ToolStripMenuItem("v0.1.52 ワークスペース操作", null, (_, _) => MessageBox.Show(
+                new ToolStripMenuItem("v0.1.53 ワークスペース操作", null, (_, _) => MessageBox.Show(
                     child,
-                    "Ctrl+Shift+J: JSON整形\nCtrl+Shift+M: Markdownプレビュー\nCtrl+Shift+C: CSVビューア\nCtrl+Tab / Ctrl+Shift+Tab: タブ切替\nCtrl+PageDown / Ctrl+PageUp: タブ切替\nタブ見出しのドラッグ＆ドロップ: 並べ替え\n\nMarkdown vi: j/k, Ctrl+F/B/D/U, gg/G, / ? n/N\nCSV vi: h/j/k/l, gg/G, 0/^/$, Ctrl+F/B/D/U, / ? n/N\nViewer COMMAND: :set ic / :set noic / :set ic?\nCtrl+マウスホイール: デバウンスされた拡大縮小\nURL: http:// / https:// をリンク表示し、シングルクリックで既定ブラウザから開く\n\nWindows: 二重起動せず、Shell起動／ドラッグ＆ドロップしたファイルを既存ウィンドウの新規タブで開く",
+                    "Ctrl+Shift+J: JSON整形\nCtrl+Shift+M: Markdownプレビュー\nCtrl+Shift+C: CSVビューア\nCtrl+Shift+X: XMLビューア\nCtrl+Tab / Ctrl+Shift+Tab: タブ切替\nCtrl+PageDown / Ctrl+PageUp: タブ切替\nタブ見出しのドラッグ＆ドロップ: 並べ替え\n\nMarkdown vi: j/k, Ctrl+F/B/D/U, gg/G, / ? n/N\nCSV vi: h/j/k/l, gg/G, 0/^/$, Ctrl+F/B/D/U, / ? n/N\nXML vi: j/k, h/l, gg/G, Ctrl+F/B/D/U, / ? n/N\nViewer COMMAND: :set ic / :set noic / :set ic?\nCtrl+マウスホイール: デバウンスされた拡大縮小\nURL: http:// / https:// をリンク表示し、シングルクリックで既定ブラウザから開く\n\nWindows: 二重起動せず、Shell起動／ドラッグ＆ドロップしたファイルを既存ウィンドウの新規タブで開く",
                     "ワークスペース操作",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information)));
@@ -650,7 +693,7 @@ internal sealed class EditorWorkspaceForm : Form
         var viewer = new LargeTextViewerControl();
         page.Controls.Add(viewer);
         _tabs.TabPages.Add(page);
-        var session = new WorkspaceTab(WorkspaceTabKind.LargeFile, path, null, null, null, viewer);
+        var session = new WorkspaceTab(WorkspaceTabKind.LargeFile, path, null, null, null, null, viewer);
         _sessions[page] = session;
 
         Cursor = Cursors.WaitCursor;
@@ -768,6 +811,11 @@ internal sealed class EditorWorkspaceForm : Form
             csv.FocusViewer();
             return;
         }
+        if (session.XmlViewer is { IsDisposed: false } xml)
+        {
+            xml.FocusViewer();
+            return;
+        }
         if (session.LargeViewer is { IsDisposed: false } large)
         {
             large.FocusViewer();
@@ -794,6 +842,7 @@ internal sealed class EditorWorkspaceForm : Form
         if (keyData == (Keys.Control | Keys.Shift | Keys.J) && InvokeActiveEditorTool("JSONを整形")) return true;
         if (keyData == (Keys.Control | Keys.Shift | Keys.M) && InvokeActiveEditorTool("Markdownプレビュー")) return true;
         if (keyData == (Keys.Control | Keys.Shift | Keys.C) && InvokeActiveEditorTool("CSVビューア")) return true;
+        if (keyData == (Keys.Control | Keys.Shift | Keys.X) && InvokeActiveEditorTool("XMLビューア")) return true;
 
         if (_tabs.SelectedTab is { } selected &&
             _sessions.TryGetValue(selected, out var session) &&
@@ -807,6 +856,14 @@ internal sealed class EditorWorkspaceForm : Form
             _sessions.TryGetValue(csvSelected, out var csvSession) &&
             csvSession.CsvViewer is { } csvViewer &&
             csvViewer.HandleKey(keyData))
+        {
+            return true;
+        }
+
+        if (_tabs.SelectedTab is { } xmlSelected &&
+            _sessions.TryGetValue(xmlSelected, out var xmlSession) &&
+            xmlSession.XmlViewer is { } xmlViewer &&
+            xmlViewer.HandleKey(keyData))
         {
             return true;
         }
@@ -875,7 +932,7 @@ internal sealed class EditorWorkspaceForm : Form
             WindowState == FormWindowState.Maximized);
     }
 
-    private enum WorkspaceTabKind { Editor, LargeFile, MarkdownPreview, CsvViewer }
+    private enum WorkspaceTabKind { Editor, LargeFile, MarkdownPreview, CsvViewer, XmlViewer }
 
     private sealed class WorkspaceTab(
         WorkspaceTabKind kind,
@@ -883,6 +940,7 @@ internal sealed class EditorWorkspaceForm : Form
         MainForm? editorForm,
         MarkdownPreviewControl? markdownPreview,
         CsvViewerControl? csvViewer,
+        XmlViewerControl? xmlViewer,
         LargeTextViewerControl? largeViewer)
     {
         public WorkspaceTabKind Kind { get; } = kind;
@@ -890,6 +948,7 @@ internal sealed class EditorWorkspaceForm : Form
         public MainForm? EditorForm { get; } = editorForm;
         public MarkdownPreviewControl? MarkdownPreview { get; } = markdownPreview;
         public CsvViewerControl? CsvViewer { get; } = csvViewer;
+        public XmlViewerControl? XmlViewer { get; } = xmlViewer;
         public LargeTextViewerControl? LargeViewer { get; } = largeViewer;
         public IDisposable? ZoomFilter { get; set; }
     }

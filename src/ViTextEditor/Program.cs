@@ -140,6 +140,7 @@ internal static class Program
 
             var sample = Path.Combine(Path.GetTempPath(), $"vi-text-editor-tab-smoke-{Guid.NewGuid():N}.txt");
             var csvSample = Path.Combine(Path.GetTempPath(), $"vi-text-editor-csv-smoke-{Guid.NewGuid():N}.csv");
+            var xmlSample = Path.Combine(Path.GetTempPath(), $"vi-text-editor-xml-smoke-{Guid.NewGuid():N}.xml");
             try
             {
                 var legacySettings = JsonSerializer.Deserialize<EditorSettings>(
@@ -209,6 +210,22 @@ internal static class Program
                 if (csvViewer.ColumnWidthForSmokeTest(0) <= compactWidth)
                     return FinishWorkspaceTabSmokeTest(21, "CSV expanded column mode did not reveal the full long value.");
 
+                File.WriteAllText(xmlSample, "<?xml version=\"1.0\"?><root id=\"1\"><item>日本語</item><!-- note --></root>");
+                using var xmlWorkspace = new EditorWorkspaceForm([xmlSample], restorePreviousWorkspace: false);
+                xmlWorkspace.CreateControl();
+                var xmlViewer = xmlWorkspace.OpenXmlViewerForSmokeTest();
+                if (xmlViewer is null || xmlViewer.ParseErrorForSmokeTest is not null ||
+                    xmlViewer.ElementCountForSmokeTest != 2 || xmlViewer.NodeCountForSmokeTest < 6)
+                {
+                    return FinishWorkspaceTabSmokeTest(
+                        22,
+                        $"XML viewer mismatch: elements={xmlViewer?.ElementCountForSmokeTest}, nodes={xmlViewer?.NodeCountForSmokeTest}, error={xmlViewer?.ParseErrorForSmokeTest}.");
+                }
+                xmlViewer.HandleKey(Keys.G);
+                xmlViewer.HandleKey(Keys.G);
+                if (!xmlViewer.SelectedTextForSmokeTest.Contains("XML Document", StringComparison.Ordinal))
+                    return FinishWorkspaceTabSmokeTest(23, $"XML gg navigation failed: {xmlViewer.SelectedTextForSmokeTest}.");
+
                 return FinishWorkspaceTabSmokeTest(0, "PASS");
             }
             catch (Exception ex)
@@ -220,6 +237,8 @@ internal static class Program
                 try { File.Delete(sample); }
                 catch { }
                 try { File.Delete(csvSample); }
+                catch { }
+                try { File.Delete(xmlSample); }
                 catch { }
             }
         }
