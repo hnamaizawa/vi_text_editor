@@ -117,7 +117,7 @@ internal static class Program
                 : null;
             void Trace(string value)
             {
-                if (!string.IsNullOrWhiteSpace(diagnosticPath)) File.WriteAllText(diagnosticPath, value);
+                if (!string.IsNullOrWhiteSpace(diagnosticPath)) File.WriteAllText(diagnosticPath, value + Environment.NewLine);
             }
             var result = smokeForm.RunUnicodeViWordSmokeTest(out var diagnostic, Trace);
             Trace(diagnostic);
