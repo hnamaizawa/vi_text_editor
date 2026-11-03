@@ -752,6 +752,11 @@ public sealed class MainForm : Form
                 return 3;
             }
         }
+        catch (Exception ex)
+        {
+            diagnostic = $"{ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}";
+            return 90;
+        }
         finally
         {
             _loading = false;

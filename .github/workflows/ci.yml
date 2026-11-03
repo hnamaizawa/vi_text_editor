@@ -86,7 +86,12 @@ jobs:
         run: |
           $diagnostic = Join-Path $env:RUNNER_TEMP "unicode-vi-word-smoke-result.txt"
           $arguments = "--unicode-vi-word-smoke-test `"$diagnostic`""
-          $process = Start-Process -FilePath "artifacts/vi_text_editor-win-x64/vi_text_editor.exe" -ArgumentList $arguments -PassThru -Wait
+          $process = Start-Process -FilePath "artifacts/vi_text_editor-win-x64/vi_text_editor.exe" -ArgumentList $arguments -PassThru
+          if (-not $process.WaitForExit(30000)) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            Get-Content $diagnostic -ErrorAction SilentlyContinue
+            throw "Unicode vi word/character smoke test timed out."
+          }
           if ($process.ExitCode -ne 0) {
             Get-Content $diagnostic -ErrorAction SilentlyContinue
             throw "Unicode vi word/character smoke test failed with exit code $($process.ExitCode)."

@@ -726,7 +726,7 @@ public sealed class ViNavigationProcessor
     {
         var character = _editor.CharacterAt(position);
         if (string.IsNullOrEmpty(character)) return SmallWordClass.Punctuation;
-        var rune = System.Text.Rune.GetRuneAt(character, 0);
+        if (!System.Text.Rune.TryGetRuneAt(character, 0, out var rune)) return SmallWordClass.Punctuation;
         if (System.Text.Rune.IsWhiteSpace(rune)) return SmallWordClass.Whitespace;
         if (System.Text.Rune.IsLetterOrDigit(rune) || rune.Value == '_') return SmallWordClass.Keyword;
         return SmallWordClass.Punctuation;
