@@ -718,34 +718,43 @@ public sealed class MainForm : Form
         return 0;
     }
 
-    internal int RunUnicodeViWordSmokeTest(out string diagnostic)
+    internal int RunUnicodeViWordSmokeTest(out string diagnostic, Action<string>? trace = null)
     {
         _forceClose = true;
         _referenceMode = false;
         ApplyReferenceMode();
         try
         {
+            trace?.Invoke("before-load-cw");
             LoadTextIntoEditor("日本語。次");
+            trace?.Invoke($"after-load-cw length={_editor.TextLength}");
             _editor.GotoPosition(0);
             _vi.Handle("c");
+            trace?.Invoke("after-c");
             _vi.Handle("w");
+            trace?.Invoke($"after-cw text={EscapeForDiagnostic(_editor.Text)} caret={_editor.CurrentPosition}");
             if (_editor.Text != "。次" || _editor.CurrentPosition != 0 || _vi.Mode != EditorMode.Insert)
             {
                 diagnostic = $"Unicode cw range mismatch: text={EscapeForDiagnostic(_editor.Text)}, caret={_editor.CurrentPosition}, mode={_vi.Mode}.";
                 return 1;
             }
             _vi.Handle("Esc");
+            trace?.Invoke("after-esc");
 
             LoadTextIntoEditor("日本語");
+            trace?.Invoke($"after-load-r length={_editor.TextLength}");
             _editor.GotoPosition(0);
             _navigation.Handle("l");
+            trace?.Invoke($"after-l caret={_editor.CurrentPosition}");
             if (_editor.CurrentPosition != Encoding.UTF8.GetByteCount("日"))
             {
                 diagnostic = $"Unicode l motion entered an invalid byte position: caret={_editor.CurrentPosition}.";
                 return 2;
             }
             _vi.Handle("r");
+            trace?.Invoke("after-r-prefix");
             _vi.Handle("文");
+            trace?.Invoke($"after-r text={EscapeForDiagnostic(_editor.Text)} caret={_editor.CurrentPosition}");
             if (_editor.Text != "日文語" || _editor.CurrentPosition != Encoding.UTF8.GetByteCount("日"))
             {
                 diagnostic = $"Unicode r range mismatch: text={EscapeForDiagnostic(_editor.Text)}, caret={_editor.CurrentPosition}.";

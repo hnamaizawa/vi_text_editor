@@ -110,13 +110,17 @@ internal static class Program
         {
             using var smokeForm = new MainForm();
             smokeForm.CreateControl();
-            var result = smokeForm.RunUnicodeViWordSmokeTest(out var diagnostic);
             var argumentIndex = Array.FindIndex(args, arg =>
                 string.Equals(arg, UnicodeViWordSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
-            if (argumentIndex >= 0 && argumentIndex + 1 < args.Length)
+            var diagnosticPath = argumentIndex >= 0 && argumentIndex + 1 < args.Length
+                ? args[argumentIndex + 1]
+                : null;
+            void Trace(string value)
             {
-                File.WriteAllText(args[argumentIndex + 1], diagnostic);
+                if (!string.IsNullOrWhiteSpace(diagnosticPath)) File.WriteAllText(diagnosticPath, value);
             }
+            var result = smokeForm.RunUnicodeViWordSmokeTest(out var diagnostic, Trace);
+            Trace(diagnostic);
             return result;
         }
 
