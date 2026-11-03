@@ -723,6 +723,10 @@ public sealed class MainForm : Form
         _forceClose = true;
         _referenceMode = false;
         ApplyReferenceMode();
+        // The smoke test mutates the control without Application.Run. Keep the
+        // normal BeginInvoke-based URL refresh disabled because there is no
+        // WinForms message loop to dispatch it in this test process.
+        _loading = true;
         try
         {
             trace?.Invoke("before-load-cw");
