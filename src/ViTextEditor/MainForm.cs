@@ -731,6 +731,7 @@ public sealed class MainForm : Form
         {
             trace?.Invoke("before-load-cw");
             LoadTextIntoEditor("日本語。次");
+            _loading = true;
             trace?.Invoke($"after-load-cw length={_editor.TextLength}");
             _editor.GotoPosition(0);
             _vi.Handle("c");
@@ -746,6 +747,7 @@ public sealed class MainForm : Form
             trace?.Invoke("after-esc");
 
             LoadTextIntoEditor("日本語");
+            _loading = true;
             trace?.Invoke($"after-load-r length={_editor.TextLength}");
             _editor.GotoPosition(0);
             _navigation.Handle("l");
