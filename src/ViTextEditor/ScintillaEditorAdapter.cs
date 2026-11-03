@@ -5,8 +5,6 @@ namespace ViTextEditor;
 
 internal sealed class ScintillaEditorAdapter : IEditorAdapter
 {
-    private const int SciPositionAfter = 2418;
-    private const int SciPositionBefore = 2417;
     private readonly Scintilla _editor;
 
     public ScintillaEditorAdapter(Scintilla editor)
@@ -21,13 +19,31 @@ internal sealed class ScintillaEditorAdapter : IEditorAdapter
     public int NextCharacterPosition(int position)
     {
         position = Math.Clamp(position, 0, _editor.TextLength);
-        return Math.Clamp(_editor.DirectMessage(SciPositionAfter, new IntPtr(position)).ToInt32(), position, _editor.TextLength);
+        if (position >= _editor.TextLength) return _editor.TextLength;
+
+        // Scintilla positions are UTF-8 byte offsets. Derive the code-point width
+        // directly instead of SCI_POSITIONAFTER: that message can block when the
+        // control has a pending WinForms notification during an edit operation.
+        var firstByte = _editor.GetCharAt(position) & 0xff;
+        var byteCount = firstByte switch
+        {
+            < 0x80 => 1,
+            >= 0xC2 and <= 0xDF => 2,
+            >= 0xE0 and <= 0xEF => 3,
+            >= 0xF0 and <= 0xF4 => 4,
+            _ => 1
+        };
+        return Math.Min(_editor.TextLength, position + byteCount);
     }
 
     public int PreviousCharacterPosition(int position)
     {
         position = Math.Clamp(position, 0, _editor.TextLength);
-        return Math.Clamp(_editor.DirectMessage(SciPositionBefore, new IntPtr(position)).ToInt32(), 0, position);
+        if (position == 0) return 0;
+
+        var previous = position - 1;
+        while (previous > 0 && (_editor.GetCharAt(previous) & 0xC0) == 0x80) previous--;
+        return previous;
     }
 
     public string CharacterAt(int position)
