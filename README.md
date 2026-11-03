@@ -2,7 +2,7 @@
 
 Windows向けの軽量テキストエディターです。EmEditor／サクラエディタに近いGUIとファイル操作を持ち、基本操作はvi/Vim系キーバインドで行います。
 
-現在のアプリ版は **v0.1.53** です。
+現在のアプリ版は **v0.1.54** です。
 
 ## 主な特徴
 
@@ -36,6 +36,13 @@ Windows向けの軽量テキストエディターです。EmEditor／サクラ�
 10. AIがLatest ReleaseにSingle-file EXE / Portable ZIPが公開されたことを確認する
 
 ## 変更履歴
+
+### v0.1.54
+
+- Ubuntu Linuxのviに合わせ、ASCII英数字・アンダースコアと日本語などの非ASCII文字を別wordとして判定
+- `aaテストbbb1.test` では `aa`、`テスト`、`bbb1`、`.`、`test` をそれぞれ独立したwordとして処理
+- `cw`、`dw`、`w/b/e` のすべてへ同じ境界判定を適用
+- 混在文字列のCoreテストとWindows実Scintillaスモークテストを追加
 
 ### v0.1.53
 

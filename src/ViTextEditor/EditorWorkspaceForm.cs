@@ -641,12 +641,12 @@ internal sealed class EditorWorkspaceForm : Form
             ReplaceHelpItem(help, item => item.Text.Contains("バージョン情報", StringComparison.Ordinal),
                 new ToolStripMenuItem("バージョン情報", null, (_, _) => MessageBox.Show(
                     child,
-                    "vi_text_editor v0.1.53\nXML tree viewer with vi navigation",
+                    "vi_text_editor v0.1.54\nUbuntu vi-compatible mixed-script word boundaries",
                     "バージョン情報",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information)));
             ReplaceHelpItem(help, item => item.Text.Contains("ワークスペース操作", StringComparison.Ordinal),
-                new ToolStripMenuItem("v0.1.53 ワークスペース操作", null, (_, _) => MessageBox.Show(
+                new ToolStripMenuItem("v0.1.54 ワークスペース操作", null, (_, _) => MessageBox.Show(
                     child,
                     "Ctrl+Shift+J: JSON整形\nCtrl+Shift+M: Markdownプレビュー\nCtrl+Shift+C: CSVビューア\nCtrl+Shift+X: XMLビューア\nCtrl+Tab / Ctrl+Shift+Tab: タブ切替\nCtrl+PageDown / Ctrl+PageUp: タブ切替\nタブ見出しのドラッグ＆ドロップ: 並べ替え\n\nMarkdown vi: j/k, Ctrl+F/B/D/U, gg/G, / ? n/N\nCSV vi: h/j/k/l, gg/G, 0/^/$, Ctrl+F/B/D/U, / ? n/N\nXML vi: j/k, h/l, gg/G, Ctrl+F/B/D/U, / ? n/N\nViewer COMMAND: :set ic / :set noic / :set ic?\nCtrl+マウスホイール: デバウンスされた拡大縮小\nURL: http:// / https:// をリンク表示し、シングルクリックで既定ブラウザから開く\n\nWindows: 二重起動せず、Shell起動／ドラッグ＆ドロップしたファイルを既存ウィンドウの新規タブで開く",
                     "ワークスペース操作",

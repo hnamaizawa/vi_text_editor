@@ -72,6 +72,23 @@ public sealed class ViNavigationProcessorTests
     }
 
     [Fact]
+    public void LowercaseWordMotionsSeparateAsciiAndJapaneseLikeUbuntuVi()
+    {
+        var (editor, navigation) = Create("aaテストbbb1.test");
+
+        navigation.Handle("w");
+        Assert.Equal(2, editor.CaretPosition);
+        navigation.Handle("w");
+        Assert.Equal(5, editor.CaretPosition);
+        navigation.Handle("w");
+        Assert.Equal(9, editor.CaretPosition);
+        navigation.Handle("w");
+        Assert.Equal(10, editor.CaretPosition);
+        navigation.Handle("b");
+        Assert.Equal(9, editor.CaretPosition);
+    }
+
+    [Fact]
     public void HorizontalMovementTreatsSurrogatePairAsOneCharacter()
     {
         var (editor, navigation) = Create("A😀B");
