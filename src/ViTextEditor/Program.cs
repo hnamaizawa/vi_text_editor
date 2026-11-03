@@ -12,6 +12,7 @@ internal static class Program
     private const string StartupOpenSmokeTestArgument = "--startup-open-smoke-test";
     private const string UrlIndicatorSmokeTestArgument = "--url-indicator-smoke-test";
     private const string MarkdownListEnterSmokeTestArgument = "--markdown-list-enter-smoke-test";
+    private const string UnicodeViWordSmokeTestArgument = "--unicode-vi-word-smoke-test";
     private const string WorkspaceTabSmokeTestArgument = "--workspace-tab-smoke-test";
     private const string SingleInstanceReceiveSmokeTestArgument = "--single-instance-receive-smoke-test";
 
@@ -32,6 +33,7 @@ internal static class Program
         var startupOpenSmokeTest = args.Any(arg => string.Equals(arg, StartupOpenSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
         var urlIndicatorSmokeTest = args.Any(arg => string.Equals(arg, UrlIndicatorSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
         var markdownListEnterSmokeTest = args.Any(arg => string.Equals(arg, MarkdownListEnterSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
+        var unicodeViWordSmokeTest = args.Any(arg => string.Equals(arg, UnicodeViWordSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
         var workspaceTabSmokeTest = args.Any(arg => string.Equals(arg, WorkspaceTabSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
         var singleInstanceSmokeIndex = Array.FindIndex(args, arg =>
             string.Equals(arg, SingleInstanceReceiveSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
@@ -47,6 +49,7 @@ internal static class Program
                           !string.Equals(arg, StartupOpenSmokeTestArgument, StringComparison.OrdinalIgnoreCase) &&
                           !string.Equals(arg, UrlIndicatorSmokeTestArgument, StringComparison.OrdinalIgnoreCase) &&
                           !string.Equals(arg, MarkdownListEnterSmokeTestArgument, StringComparison.OrdinalIgnoreCase) &&
+                          !string.Equals(arg, UnicodeViWordSmokeTestArgument, StringComparison.OrdinalIgnoreCase) &&
                           !string.Equals(arg, WorkspaceTabSmokeTestArgument, StringComparison.OrdinalIgnoreCase))
             .ToArray();
 
@@ -100,6 +103,24 @@ internal static class Program
             {
                 File.WriteAllText(args[argumentIndex + 1], diagnostic);
             }
+            return result;
+        }
+
+        if (unicodeViWordSmokeTest)
+        {
+            using var smokeForm = new MainForm();
+            smokeForm.CreateControl();
+            var argumentIndex = Array.FindIndex(args, arg =>
+                string.Equals(arg, UnicodeViWordSmokeTestArgument, StringComparison.OrdinalIgnoreCase));
+            var diagnosticPath = argumentIndex >= 0 && argumentIndex + 1 < args.Length
+                ? args[argumentIndex + 1]
+                : null;
+            void Trace(string value)
+            {
+                if (!string.IsNullOrWhiteSpace(diagnosticPath)) File.WriteAllText(diagnosticPath, value + Environment.NewLine);
+            }
+            var result = smokeForm.RunUnicodeViWordSmokeTest(out var diagnostic, Trace);
+            Trace(diagnostic);
             return result;
         }
 

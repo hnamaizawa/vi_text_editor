@@ -57,6 +57,34 @@ public sealed class ViNavigationProcessorTests
     }
 
     [Fact]
+    public void LowercaseWordMotionsSeparateJapaneseKeywordsFromPunctuation()
+    {
+        var (editor, navigation) = Create("日本語。次 末");
+
+        navigation.Handle("w");
+        Assert.Equal(3, editor.CaretPosition);
+        navigation.Handle("w");
+        Assert.Equal(4, editor.CaretPosition);
+        navigation.Handle("w");
+        Assert.Equal(6, editor.CaretPosition);
+        navigation.Handle("b");
+        Assert.Equal(4, editor.CaretPosition);
+    }
+
+    [Fact]
+    public void HorizontalMovementTreatsSurrogatePairAsOneCharacter()
+    {
+        var (editor, navigation) = Create("A😀B");
+
+        navigation.Handle("l");
+        Assert.Equal(1, editor.CaretPosition);
+        navigation.Handle("l");
+        Assert.Equal(3, editor.CaretPosition);
+        navigation.Handle("h");
+        Assert.Equal(1, editor.CaretPosition);
+    }
+
+    [Fact]
     public void CtrlFAndCtrlBDelegateFullPageScrolling()
     {
         var (editor, navigation) = Create("one\ntwo\nthree");

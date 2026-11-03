@@ -5,7 +5,6 @@ namespace ViTextEditor;
 
 internal sealed class ScintillaEditorAdapter : IEditorAdapter
 {
-    private const int SciPositionAfter = 2418;
     private readonly Scintilla _editor;
 
     public ScintillaEditorAdapter(Scintilla editor)
@@ -19,15 +18,35 @@ internal sealed class ScintillaEditorAdapter : IEditorAdapter
 
     public int NextCharacterPosition(int position)
     {
-        position = Math.Clamp(position, 0, _editor.TextLength);
-        return Math.Clamp(_editor.DirectMessage(SciPositionAfter, new IntPtr(position)).ToInt32(), position, _editor.TextLength);
+        var text = _editor.Text;
+        position = Math.Clamp(position, 0, text.Length);
+        if (position >= text.Length) return text.Length;
+        return char.IsHighSurrogate(text[position]) &&
+               position + 1 < text.Length &&
+               char.IsLowSurrogate(text[position + 1])
+            ? position + 2
+            : position + 1;
+    }
+
+    public int PreviousCharacterPosition(int position)
+    {
+        var text = _editor.Text;
+        position = Math.Clamp(position, 0, text.Length);
+        if (position == 0) return 0;
+        var previous = position - 1;
+        return previous > 0 &&
+               char.IsLowSurrogate(text[previous]) &&
+               char.IsHighSurrogate(text[previous - 1])
+            ? previous - 1
+            : previous;
     }
 
     public string CharacterAt(int position)
     {
-        position = Math.Clamp(position, 0, _editor.TextLength);
+        var text = _editor.Text;
+        position = Math.Clamp(position, 0, text.Length);
         var next = NextCharacterPosition(position);
-        return next > position ? _editor.GetTextRange(position, next - position) : string.Empty;
+        return next > position ? text.Substring(position, next - position) : string.Empty;
     }
 
     public char CharAt(int position)

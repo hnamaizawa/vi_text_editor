@@ -70,6 +70,23 @@ public sealed class ViKeyProcessorTests
         Assert.Equal(EditorMode.Insert, vi.Mode);
     }
 
+    [Theory]
+    [InlineData("foo.bar", 0, ".bar")]
+    [InlineData("foo.bar", 3, "foobar")]
+    [InlineData("日本語。次", 0, "。次")]
+    [InlineData("日本語。次", 3, "日本語次")]
+    [InlineData("abc_日本語-次", 0, "-次")]
+    public void CwUsesVimKeywordAndPunctuationWordClasses(string source, int caret, string expected)
+    {
+        var (editor, vi) = Create(source, caret);
+
+        vi.Handle("c");
+        vi.Handle("w");
+
+        Assert.Equal(expected, editor.Text);
+        Assert.Equal(EditorMode.Insert, vi.Mode);
+    }
+
     [Fact]
     public void UppercaseCwChangesWhitespaceSeparatedWord()
     {
