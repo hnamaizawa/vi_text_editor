@@ -752,7 +752,7 @@ public sealed class MainForm : Form
             _editor.GotoPosition(0);
             _navigation.Handle("l");
             trace?.Invoke($"after-l caret={_editor.CurrentPosition}");
-            if (_editor.CurrentPosition != Encoding.UTF8.GetByteCount("日"))
+            if (_editor.CurrentPosition != "日".Length)
             {
                 diagnostic = $"Unicode l motion entered an invalid byte position: caret={_editor.CurrentPosition}.";
                 return 2;
@@ -761,7 +761,7 @@ public sealed class MainForm : Form
             trace?.Invoke("after-r-prefix");
             _vi.Handle("文");
             trace?.Invoke($"after-r text={EscapeForDiagnostic(_editor.Text)} caret={_editor.CurrentPosition}");
-            if (_editor.Text != "日文語" || _editor.CurrentPosition != Encoding.UTF8.GetByteCount("日"))
+            if (_editor.Text != "日文語" || _editor.CurrentPosition != "日".Length)
             {
                 diagnostic = $"Unicode r range mismatch: text={EscapeForDiagnostic(_editor.Text)}, caret={_editor.CurrentPosition}.";
                 return 3;
