@@ -470,38 +470,48 @@ public sealed class ViKeyProcessor
         if (length == 0) return 0;
         var i = Math.Clamp(start, 0, length - 1);
 
-        if (char.IsWhiteSpace(_editor.CharAt(i)))
+        if (IsWhitespaceAt(i))
         {
-            while (i < length && char.IsWhiteSpace(_editor.CharAt(i))) i++;
+            while (i < length && IsWhitespaceAt(i)) i = NextCharacterPosition(i);
             return i;
         }
 
         if (bigWord)
         {
-            while (i < length && !char.IsWhiteSpace(_editor.CharAt(i))) i++;
+            while (i < length && !IsWhitespaceAt(i)) i = NextCharacterPosition(i);
         }
         else
         {
-            var wordClass = ClassifySmallWord(_editor.CharAt(i));
-            while (i < length && ClassifySmallWord(_editor.CharAt(i)) == wordClass) i++;
+            var wordClass = ClassifySmallWordAt(i);
+            while (i < length && ClassifySmallWordAt(i) == wordClass) i = NextCharacterPosition(i);
         }
-        while (i < length && char.IsWhiteSpace(_editor.CharAt(i))) i++;
+        while (i < length && IsWhitespaceAt(i)) i = NextCharacterPosition(i);
         return i;
     }
 
     private void MovePreviousWord(bool bigWord)
     {
         if (_editor.TextLength == 0) return;
-        var i = Math.Clamp(_editor.CaretPosition - 1, 0, _editor.TextLength - 1);
-        while (i > 0 && char.IsWhiteSpace(_editor.CharAt(i))) i--;
+        var i = PreviousCharacterPosition(Math.Clamp(_editor.CaretPosition, 0, _editor.TextLength));
+        while (i > 0 && IsWhitespaceAt(i)) i = PreviousCharacterPosition(i);
         if (bigWord)
         {
-            while (i > 0 && !char.IsWhiteSpace(_editor.CharAt(i - 1))) i--;
+            while (i > 0)
+            {
+                var previous = PreviousCharacterPosition(i);
+                if (IsWhitespaceAt(previous)) break;
+                i = previous;
+            }
         }
         else
         {
-            var wordClass = ClassifySmallWord(_editor.CharAt(i));
-            while (i > 0 && ClassifySmallWord(_editor.CharAt(i - 1)) == wordClass) i--;
+            var wordClass = ClassifySmallWordAt(i);
+            while (i > 0)
+            {
+                var previous = PreviousCharacterPosition(i);
+                if (ClassifySmallWordAt(previous) != wordClass) break;
+                i = previous;
+            }
         }
         _editor.MoveCaret(i);
     }
@@ -510,16 +520,21 @@ public sealed class ViKeyProcessor
     {
         var length = _editor.TextLength;
         if (length == 0) return;
-        var i = Math.Clamp(_editor.CaretPosition + 1, 0, length - 1);
-        while (i < length - 1 && char.IsWhiteSpace(_editor.CharAt(i))) i++;
+        var current = Math.Clamp(_editor.CaretPosition, 0, length - 1);
+        var i = NextCharacterPosition(current);
+        if (i >= length) i = current;
+        while (i < length && IsWhitespaceAt(i)) i = NextCharacterPosition(i);
+        if (i >= length) { _editor.MoveCaret(current); return; }
         if (bigWord)
         {
-            while (i < length - 1 && !char.IsWhiteSpace(_editor.CharAt(i + 1))) i++;
+            while (NextCharacterPosition(i) < length && !IsWhitespaceAt(NextCharacterPosition(i)))
+                i = NextCharacterPosition(i);
         }
         else
         {
-            var wordClass = ClassifySmallWord(_editor.CharAt(i));
-            while (i < length - 1 && ClassifySmallWord(_editor.CharAt(i + 1)) == wordClass) i++;
+            var wordClass = ClassifySmallWordAt(i);
+            while (NextCharacterPosition(i) < length && ClassifySmallWordAt(NextCharacterPosition(i)) == wordClass)
+                i = NextCharacterPosition(i);
         }
         _editor.MoveCaret(i);
     }
@@ -529,7 +544,7 @@ public sealed class ViKeyProcessor
         var start = _editor.LineStart(_editor.CaretPosition);
         var end = _editor.LineEndExclusive(_editor.CaretPosition);
         var i = start;
-        while (i < end && char.IsWhiteSpace(_editor.CharAt(i))) i++;
+        while (i < end && IsWhitespaceAt(i)) i = NextCharacterPosition(i);
         _editor.MoveCaret(i < end ? i : start);
     }
 
@@ -633,9 +648,9 @@ public sealed class ViKeyProcessor
 
             var currentIsEmpty = currentEnd == currentStart;
             var nextIsEmpty = deleteEnd >= nextEnd;
-            var currentEndsWithWhitespace = !currentIsEmpty && char.IsWhiteSpace(_editor.CharAt(currentEnd - 1));
+            var currentIsWhitespace = !currentIsEmpty && IsWhitespaceAt(PreviousCharacterPosition(currentEnd));
             var nextStartsWithClosingParenthesis = !nextIsEmpty && _editor.CharAt(deleteEnd) == ')';
-            if (!currentIsEmpty && !nextIsEmpty && !currentEndsWithWhitespace && !nextStartsWithClosingParenthesis)
+            if (!currentIsEmpty && !nextIsEmpty && !currentIsWhitespace && !nextStartsWithClosingParenthesis)
             {
                 separator = " ";
             }
@@ -652,7 +667,7 @@ public sealed class ViKeyProcessor
         if (length == 0) return false;
         var start = Math.Clamp(_editor.CaretPosition, 0, length - 1);
         int end;
-        if (nextWordMotion && char.IsWhiteSpace(_editor.CharAt(start)))
+        if (nextWordMotion && IsWhitespaceAt(start))
         {
             end = start;
             for (var index = 0; index < Math.Max(1, count); index++)
@@ -694,7 +709,7 @@ public sealed class ViKeyProcessor
             end = next;
         }
         if (end > lineEnd) end = lineEnd;
-        if (end <= start) end = Math.Min(_editor.TextLength, start + 1);
+        if (end <= start) end = NextCharacterPosition(start);
         return DeleteIntoRegister(start, end);
     }
 
@@ -714,16 +729,16 @@ public sealed class ViKeyProcessor
         var end = Math.Clamp(start, 0, length);
         for (var index = 0; index < Math.Max(1, count) && end < lineEnd; index++)
         {
-            while (end < lineEnd && char.IsWhiteSpace(_editor.CharAt(end))) end++;
+            while (end < lineEnd && IsWhitespaceAt(end)) end = NextCharacterPosition(end);
             if (end >= lineEnd) break;
             if (bigWord)
             {
-                while (end < lineEnd && !char.IsWhiteSpace(_editor.CharAt(end))) end++;
+                while (end < lineEnd && !IsWhitespaceAt(end)) end = NextCharacterPosition(end);
             }
             else
             {
-                var wordClass = ClassifySmallWord(_editor.CharAt(end));
-                while (end < lineEnd && ClassifySmallWord(_editor.CharAt(end)) == wordClass) end++;
+                var wordClass = ClassifySmallWordAt(end);
+                while (end < lineEnd && ClassifySmallWordAt(end) == wordClass) end = NextCharacterPosition(end);
             }
         }
         return end;
@@ -735,17 +750,27 @@ public sealed class ViKeyProcessor
         var position = Math.Clamp(start, lineStart, _editor.TextLength);
         for (var index = 0; index < Math.Max(1, count) && position > lineStart; index++)
         {
-            var cursor = position - 1;
-            while (cursor >= lineStart && char.IsWhiteSpace(_editor.CharAt(cursor))) cursor--;
-            if (cursor < lineStart) return lineStart;
+            var cursor = PreviousCharacterPosition(position);
+            while (cursor > lineStart && IsWhitespaceAt(cursor)) cursor = PreviousCharacterPosition(cursor);
+            if (cursor == lineStart && IsWhitespaceAt(cursor)) return lineStart;
             if (bigWord)
             {
-                while (cursor > lineStart && !char.IsWhiteSpace(_editor.CharAt(cursor - 1))) cursor--;
+                while (cursor > lineStart)
+                {
+                    var previous = PreviousCharacterPosition(cursor);
+                    if (IsWhitespaceAt(previous)) break;
+                    cursor = previous;
+                }
             }
             else
             {
-                var wordClass = ClassifySmallWord(_editor.CharAt(cursor));
-                while (cursor > lineStart && ClassifySmallWord(_editor.CharAt(cursor - 1)) == wordClass) cursor--;
+                var wordClass = ClassifySmallWordAt(cursor);
+                while (cursor > lineStart)
+                {
+                    var previous = PreviousCharacterPosition(cursor);
+                    if (ClassifySmallWordAt(previous) != wordClass) break;
+                    cursor = previous;
+                }
             }
             position = cursor;
         }
@@ -1064,10 +1089,27 @@ public sealed class ViKeyProcessor
         return Environment.NewLine;
     }
 
-    private static SmallWordClass ClassifySmallWord(char c)
+    private int NextCharacterPosition(int position)
     {
-        if (char.IsWhiteSpace(c)) return SmallWordClass.Whitespace;
-        if (char.IsLetterOrDigit(c) || c == '_') return SmallWordClass.Keyword;
+        var next = _editor.NextCharacterPosition(position);
+        return next > position ? next : Math.Min(_editor.TextLength, position + 1);
+    }
+
+    private int PreviousCharacterPosition(int position)
+    {
+        var previous = _editor.PreviousCharacterPosition(position);
+        return previous < position ? previous : Math.Max(0, position - 1);
+    }
+
+    private bool IsWhitespaceAt(int position) => ClassifySmallWordAt(position) == SmallWordClass.Whitespace;
+
+    private SmallWordClass ClassifySmallWordAt(int position)
+    {
+        var character = _editor.CharacterAt(position);
+        if (string.IsNullOrEmpty(character)) return SmallWordClass.Punctuation;
+        var rune = System.Text.Rune.GetRuneAt(character, 0);
+        if (System.Text.Rune.IsWhiteSpace(rune)) return SmallWordClass.Whitespace;
+        if (System.Text.Rune.IsLetterOrDigit(rune) || rune.Value == '_') return SmallWordClass.Keyword;
         return SmallWordClass.Punctuation;
     }
 

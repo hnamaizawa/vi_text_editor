@@ -718,6 +718,49 @@ public sealed class MainForm : Form
         return 0;
     }
 
+    internal int RunUnicodeViWordSmokeTest(out string diagnostic)
+    {
+        _forceClose = true;
+        _referenceMode = false;
+        ApplyReferenceMode();
+        try
+        {
+            LoadTextIntoEditor("日本語。次");
+            _editor.GotoPosition(0);
+            _vi.Handle("c");
+            _vi.Handle("w");
+            if (_editor.Text != "。次" || _editor.CurrentPosition != 0 || _vi.Mode != EditorMode.Insert)
+            {
+                diagnostic = $"Unicode cw range mismatch: text={EscapeForDiagnostic(_editor.Text)}, caret={_editor.CurrentPosition}, mode={_vi.Mode}.";
+                return 1;
+            }
+            _vi.Handle("Esc");
+
+            LoadTextIntoEditor("日本語");
+            _editor.GotoPosition(0);
+            _navigation.Handle("l");
+            if (_editor.CurrentPosition != Encoding.UTF8.GetByteCount("日"))
+            {
+                diagnostic = $"Unicode l motion entered an invalid byte position: caret={_editor.CurrentPosition}.";
+                return 2;
+            }
+            _vi.Handle("r");
+            _vi.Handle("文");
+            if (_editor.Text != "日文語" || _editor.CurrentPosition != Encoding.UTF8.GetByteCount("日"))
+            {
+                diagnostic = $"Unicode r range mismatch: text={EscapeForDiagnostic(_editor.Text)}, caret={_editor.CurrentPosition}.";
+                return 3;
+            }
+        }
+        finally
+        {
+            _loading = false;
+        }
+
+        diagnostic = "PASS";
+        return 0;
+    }
+
     private static string EscapeForDiagnostic(string value) =>
         value.Replace("\r", "\\r", StringComparison.Ordinal)
             .Replace("\n", "\\n", StringComparison.Ordinal);

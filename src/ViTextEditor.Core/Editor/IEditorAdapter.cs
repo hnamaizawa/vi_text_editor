@@ -15,6 +15,17 @@ public interface IEditorAdapter
 
     int NextCharacterPosition(int position) => Math.Min(TextLength, Math.Max(0, position) + 1);
 
+    int PreviousCharacterPosition(int position)
+    {
+        var text = Text;
+        position = Math.Clamp(position, 0, text.Length);
+        if (position == 0) return 0;
+        var previous = position - 1;
+        return previous > 0 && char.IsLowSurrogate(text[previous]) && char.IsHighSurrogate(text[previous - 1])
+            ? previous - 1
+            : previous;
+    }
+
     string CharacterAt(int position)
     {
         var text = Text;

@@ -236,8 +236,14 @@ public sealed class ViNavigationProcessor
         var current = Math.Clamp(_editor.CaretPosition, 0, _editor.TextLength - 1);
         var start = _editor.LineStart(current);
         var end = _editor.LineEndExclusive(current);
-        var max = end > start ? end - 1 : start;
-        _editor.MoveCaret(Math.Clamp(current + delta, start, max));
+        var position = current;
+        for (var step = 0; step < Math.Abs(delta); step++)
+        {
+            var next = delta > 0 ? NextCharacterPosition(position) : PreviousCharacterPosition(position);
+            if (delta > 0 && next >= end || delta < 0 && next < start || next == position) break;
+            position = next;
+        }
+        _editor.MoveCaret(position);
     }
 
     private void MoveVertical(int direction, int count)
@@ -245,7 +251,7 @@ public sealed class ViNavigationProcessor
         if (_editor.TextLength == 0) return;
         var current = Math.Clamp(_editor.CaretPosition, 0, _editor.TextLength - 1);
         var currentStart = _editor.LineStart(current);
-        var desiredColumn = Math.Max(0, current - currentStart);
+        var desiredColumn = CharacterColumn(currentStart, current);
         var targetStart = currentStart;
 
         for (var step = 0; step < count; step++)
@@ -256,8 +262,7 @@ public sealed class ViNavigationProcessor
         }
 
         var targetEnd = _editor.LineEndExclusive(targetStart);
-        var maxTarget = targetEnd > targetStart ? targetEnd - 1 : targetStart;
-        _editor.MoveCaret(Math.Min(targetStart + desiredColumn, maxTarget));
+        _editor.MoveCaret(PositionAtCharacterColumn(targetStart, targetEnd, desiredColumn));
     }
 
     private int NextLineStart(int lineStart)
@@ -298,7 +303,7 @@ public sealed class ViNavigationProcessor
     {
         var end = _editor.LineEndExclusive(lineStart);
         var i = lineStart;
-        while (i < end && char.IsWhiteSpace(_editor.CharAt(i))) i++;
+        while (i < end && IsWhitespaceAt(i)) i = NextCharacterPosition(i);
         _editor.MoveCaret(i < end ? i : lineStart);
     }
 
@@ -312,7 +317,7 @@ public sealed class ViNavigationProcessor
             start = next;
         }
         var end = _editor.LineEndExclusive(start);
-        _editor.MoveCaret(end > start ? end - 1 : start);
+        _editor.MoveCaret(end > start ? PreviousCharacterPosition(end) : start);
     }
 
     private void MoveLineFirstNonBlank(int direction, int count)
@@ -382,94 +387,108 @@ public sealed class ViNavigationProcessor
 
     private void MoveNextWord(bool bigWord)
     {
-        var text = _editor.Text;
-        if (text.Length == 0) return;
-        var current = Math.Clamp(_editor.CaretPosition, 0, text.Length - 1);
+        var length = _editor.TextLength;
+        if (length == 0) return;
+        var current = Math.Clamp(_editor.CaretPosition, 0, length - 1);
         var i = current;
 
-        if (char.IsWhiteSpace(text[i]))
+        if (IsWhitespaceAt(i))
         {
-            while (i < text.Length && char.IsWhiteSpace(text[i])) i++;
+            while (i < length && IsWhitespaceAt(i)) i = NextCharacterPosition(i);
         }
         else if (bigWord)
         {
-            while (i < text.Length && !char.IsWhiteSpace(text[i])) i++;
-            while (i < text.Length && char.IsWhiteSpace(text[i])) i++;
+            while (i < length && !IsWhitespaceAt(i)) i = NextCharacterPosition(i);
+            while (i < length && IsWhitespaceAt(i)) i = NextCharacterPosition(i);
         }
         else
         {
-            var wordClass = ClassifySmallWord(text[i]);
-            while (i < text.Length && ClassifySmallWord(text[i]) == wordClass) i++;
-            while (i < text.Length && char.IsWhiteSpace(text[i])) i++;
+            var wordClass = ClassifySmallWordAt(i);
+            while (i < length && ClassifySmallWordAt(i) == wordClass) i = NextCharacterPosition(i);
+            while (i < length && IsWhitespaceAt(i)) i = NextCharacterPosition(i);
         }
 
-        if (i < text.Length) _editor.MoveCaret(i);
+        if (i < length) _editor.MoveCaret(i);
     }
 
     private void MovePreviousWord(bool bigWord)
     {
-        var text = _editor.Text;
-        if (text.Length == 0) return;
-        var i = Math.Clamp(_editor.CaretPosition - 1, 0, text.Length - 1);
-        while (i > 0 && char.IsWhiteSpace(text[i])) i--;
+        if (_editor.TextLength == 0) return;
+        var i = PreviousCharacterPosition(Math.Clamp(_editor.CaretPosition, 0, _editor.TextLength));
+        while (i > 0 && IsWhitespaceAt(i)) i = PreviousCharacterPosition(i);
 
         if (bigWord)
         {
-            while (i > 0 && !char.IsWhiteSpace(text[i - 1])) i--;
+            while (i > 0)
+            {
+                var previous = PreviousCharacterPosition(i);
+                if (IsWhitespaceAt(previous)) break;
+                i = previous;
+            }
         }
         else
         {
-            var wordClass = ClassifySmallWord(text[i]);
-            while (i > 0 && ClassifySmallWord(text[i - 1]) == wordClass) i--;
+            var wordClass = ClassifySmallWordAt(i);
+            while (i > 0)
+            {
+                var previous = PreviousCharacterPosition(i);
+                if (ClassifySmallWordAt(previous) != wordClass) break;
+                i = previous;
+            }
         }
         _editor.MoveCaret(i);
     }
 
     private void MoveEndWord(bool bigWord)
     {
-        var text = _editor.Text;
-        if (text.Length == 0) return;
-        var i = Math.Clamp(_editor.CaretPosition + 1, 0, text.Length - 1);
-        while (i < text.Length - 1 && char.IsWhiteSpace(text[i])) i++;
+        var length = _editor.TextLength;
+        if (length == 0) return;
+        var current = Math.Clamp(_editor.CaretPosition, 0, length - 1);
+        var i = NextCharacterPosition(current);
+        if (i >= length) i = current;
+        while (i < length && IsWhitespaceAt(i)) i = NextCharacterPosition(i);
+        if (i >= length) { _editor.MoveCaret(current); return; }
         if (bigWord)
         {
-            while (i < text.Length - 1 && !char.IsWhiteSpace(text[i + 1])) i++;
+            while (NextCharacterPosition(i) < length && !IsWhitespaceAt(NextCharacterPosition(i)))
+                i = NextCharacterPosition(i);
         }
         else
         {
-            var wordClass = ClassifySmallWord(text[i]);
-            while (i < text.Length - 1 && ClassifySmallWord(text[i + 1]) == wordClass) i++;
+            var wordClass = ClassifySmallWordAt(i);
+            while (NextCharacterPosition(i) < length && ClassifySmallWordAt(NextCharacterPosition(i)) == wordClass)
+                i = NextCharacterPosition(i);
         }
         _editor.MoveCaret(i);
     }
 
     private void MovePreviousWordEnd(bool bigWord)
     {
-        var text = _editor.Text;
-        if (text.Length == 0) return;
-        var current = Math.Clamp(_editor.CaretPosition, 0, text.Length - 1);
-        var i = current - 1;
-        if (i < 0)
+        if (_editor.TextLength == 0) return;
+        var current = Math.Clamp(_editor.CaretPosition, 0, _editor.TextLength - 1);
+        if (current == 0)
         {
             _editor.MoveCaret(0);
             return;
         }
+        var i = PreviousCharacterPosition(current);
 
-        if (!char.IsWhiteSpace(text[current]) && !char.IsWhiteSpace(text[i]))
+        if (!IsWhitespaceAt(current) && !IsWhitespaceAt(i))
         {
-            var currentClass = ClassifySmallWord(text[current]);
-            while (i >= 0)
+            var currentClass = ClassifySmallWordAt(current);
+            while (true)
             {
                 var sameCurrent = bigWord
-                    ? !char.IsWhiteSpace(text[i])
-                    : ClassifySmallWord(text[i]) == currentClass;
+                    ? !IsWhitespaceAt(i)
+                    : ClassifySmallWordAt(i) == currentClass;
                 if (!sameCurrent) break;
-                i--;
+                if (i == 0) { _editor.MoveCaret(0); return; }
+                i = PreviousCharacterPosition(i);
             }
         }
 
-        while (i >= 0 && char.IsWhiteSpace(text[i])) i--;
-        if (i < 0)
+        while (i > 0 && IsWhitespaceAt(i)) i = PreviousCharacterPosition(i);
+        if (i == 0 && IsWhitespaceAt(i))
         {
             _editor.MoveCaret(0);
             return;
@@ -674,10 +693,42 @@ public sealed class ViNavigationProcessor
 
     private bool IsEmptyLine(int lineStart) => _editor.LineEndExclusive(lineStart) == lineStart;
 
-    private static SmallWordClass ClassifySmallWord(char c)
+    private int NextCharacterPosition(int position)
     {
-        if (char.IsWhiteSpace(c)) return SmallWordClass.Whitespace;
-        if (char.IsLetterOrDigit(c) || c == '_') return SmallWordClass.Keyword;
+        var next = _editor.NextCharacterPosition(position);
+        return next > position ? next : Math.Min(_editor.TextLength, position + 1);
+    }
+
+    private int PreviousCharacterPosition(int position)
+    {
+        var previous = _editor.PreviousCharacterPosition(position);
+        return previous < position ? previous : Math.Max(0, position - 1);
+    }
+
+    private int CharacterColumn(int lineStart, int position)
+    {
+        var column = 0;
+        for (var cursor = lineStart; cursor < position; cursor = NextCharacterPosition(cursor)) column++;
+        return column;
+    }
+
+    private int PositionAtCharacterColumn(int lineStart, int lineEnd, int column)
+    {
+        var position = lineStart;
+        for (var index = 0; index < column && NextCharacterPosition(position) < lineEnd; index++)
+            position = NextCharacterPosition(position);
+        return position;
+    }
+
+    private bool IsWhitespaceAt(int position) => ClassifySmallWordAt(position) == SmallWordClass.Whitespace;
+
+    private SmallWordClass ClassifySmallWordAt(int position)
+    {
+        var character = _editor.CharacterAt(position);
+        if (string.IsNullOrEmpty(character)) return SmallWordClass.Punctuation;
+        var rune = System.Text.Rune.GetRuneAt(character, 0);
+        if (System.Text.Rune.IsWhiteSpace(rune)) return SmallWordClass.Whitespace;
+        if (System.Text.Rune.IsLetterOrDigit(rune) || rune.Value == '_') return SmallWordClass.Keyword;
         return SmallWordClass.Punctuation;
     }
 

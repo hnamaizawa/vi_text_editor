@@ -6,6 +6,7 @@ namespace ViTextEditor;
 internal sealed class ScintillaEditorAdapter : IEditorAdapter
 {
     private const int SciPositionAfter = 2418;
+    private const int SciPositionBefore = 2417;
     private readonly Scintilla _editor;
 
     public ScintillaEditorAdapter(Scintilla editor)
@@ -21,6 +22,12 @@ internal sealed class ScintillaEditorAdapter : IEditorAdapter
     {
         position = Math.Clamp(position, 0, _editor.TextLength);
         return Math.Clamp(_editor.DirectMessage(SciPositionAfter, new IntPtr(position)).ToInt32(), position, _editor.TextLength);
+    }
+
+    public int PreviousCharacterPosition(int position)
+    {
+        position = Math.Clamp(position, 0, _editor.TextLength);
+        return Math.Clamp(_editor.DirectMessage(SciPositionBefore, new IntPtr(position)).ToInt32(), 0, position);
     }
 
     public string CharacterAt(int position)
