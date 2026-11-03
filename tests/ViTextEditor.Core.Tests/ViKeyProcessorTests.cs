@@ -75,7 +75,9 @@ public sealed class ViKeyProcessorTests
     [InlineData("foo.bar", 3, "foobar")]
     [InlineData("日本語。次", 0, "。次")]
     [InlineData("日本語。次", 3, "日本語次")]
-    [InlineData("abc_日本語-次", 0, "-次")]
+    [InlineData("abc_日本語-次", 0, "日本語-次")]
+    [InlineData("aaテストbbb1.test", 0, "テストbbb1.test")]
+    [InlineData("aaテストbbb1.test", 2, "aabbb1.test")]
     public void CwUsesVimKeywordAndPunctuationWordClasses(string source, int caret, string expected)
     {
         var (editor, vi) = Create(source, caret);
@@ -85,6 +87,21 @@ public sealed class ViKeyProcessorTests
 
         Assert.Equal(expected, editor.Text);
         Assert.Equal(EditorMode.Insert, vi.Mode);
+    }
+
+    [Theory]
+    [InlineData(0, "テストbbb1.test")]
+    [InlineData(2, "aabbb1.test")]
+    [InlineData(5, "aaテスト.test")]
+    public void DwSeparatesAsciiAndJapaneseWordsLikeUbuntuVi(int caret, string expected)
+    {
+        var (editor, vi) = Create("aaテストbbb1.test", caret);
+
+        vi.Handle("d");
+        vi.Handle("w");
+
+        Assert.Equal(expected, editor.Text);
+        Assert.Equal(EditorMode.Normal, vi.Mode);
     }
 
     [Fact]

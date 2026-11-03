@@ -746,6 +746,32 @@ public sealed class MainForm : Form
             _vi.Handle("Esc");
             trace?.Invoke("after-esc");
 
+            LoadTextIntoEditor("aaテストbbb1.test");
+            _loading = true;
+            _editor.GotoPosition(0);
+            _vi.Handle("c");
+            _vi.Handle("w");
+            trace?.Invoke($"after-mixed-ascii-cw text={EscapeForDiagnostic(_editor.Text)}");
+            if (_editor.Text != "テストbbb1.test")
+            {
+                diagnostic = $"Ubuntu vi ASCII cw boundary mismatch: text={EscapeForDiagnostic(_editor.Text)}.";
+                return 4;
+            }
+            _vi.Handle("Esc");
+
+            LoadTextIntoEditor("aaテストbbb1.test");
+            _loading = true;
+            _editor.GotoPosition(2);
+            _vi.Handle("c");
+            _vi.Handle("w");
+            trace?.Invoke($"after-mixed-japanese-cw text={EscapeForDiagnostic(_editor.Text)}");
+            if (_editor.Text != "aabbb1.test")
+            {
+                diagnostic = $"Ubuntu vi Japanese cw boundary mismatch: text={EscapeForDiagnostic(_editor.Text)}.";
+                return 5;
+            }
+            _vi.Handle("Esc");
+
             LoadTextIntoEditor("日本語");
             _loading = true;
             trace?.Invoke($"after-load-r length={_editor.TextLength}");

@@ -728,7 +728,9 @@ public sealed class ViNavigationProcessor
         if (string.IsNullOrEmpty(character)) return SmallWordClass.Punctuation;
         if (!System.Text.Rune.TryGetRuneAt(character, 0, out var rune)) return SmallWordClass.Punctuation;
         if (System.Text.Rune.IsWhiteSpace(rune)) return SmallWordClass.Whitespace;
-        if (System.Text.Rune.IsLetterOrDigit(rune) || rune.Value == '_') return SmallWordClass.Keyword;
+        if (rune.Value == '_' || rune.Value <= 0x7F && System.Text.Rune.IsLetterOrDigit(rune))
+            return SmallWordClass.AsciiKeyword;
+        if (System.Text.Rune.IsLetterOrDigit(rune)) return SmallWordClass.NonAsciiKeyword;
         return SmallWordClass.Punctuation;
     }
 
@@ -738,7 +740,8 @@ public sealed class ViNavigationProcessor
     private enum SmallWordClass
     {
         Whitespace,
-        Keyword,
+        AsciiKeyword,
+        NonAsciiKeyword,
         Punctuation
     }
 }
